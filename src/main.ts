@@ -32,9 +32,10 @@ async function bootstrap() {
   SwaggerModule.setup('api', app, document);
 
   app.enableCors({
-    origin: true,
+    origin: ['http://localhost:5173', 'https://sowestudio.com.br'],
     credentials: true,
   });
+
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalInterceptors(new LoggingInterceptor());
   await app.listen(process.env.PORT || 3000);
