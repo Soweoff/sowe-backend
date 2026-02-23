@@ -17,7 +17,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 
 @ApiBearerAuth() // 🔐 Diz ao Swagger que precisa de token
 @UseGuards(JwtAuthGuard)
-@Controller('users')
+@Controller({ path: 'users', version: '1' })
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
