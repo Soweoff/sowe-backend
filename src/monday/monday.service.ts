@@ -15,6 +15,7 @@ export class MondayService {
                     column_values {
                     id
                     text
+                    value
                     }
                 }
                 }
