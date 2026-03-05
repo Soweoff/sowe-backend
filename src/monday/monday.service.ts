@@ -40,7 +40,7 @@ export class MondayService {
 
       return response.data;
     } catch (error: any) {
-      console.log('MONDAY ERROR ↓↓↓');
+      console.log('MONDAY ERROR:');
 
       if (error.response) {
         console.log(error.response.data);
