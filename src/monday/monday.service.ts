@@ -32,7 +32,7 @@ export class MondayService {
         { query },
         {
           headers: {
-            Authorization: `Bearer ${process.env.MONDAY_TOKEN}`,
+            Authorization: process.env.MONDAY_TOKEN,
             'Content-Type': 'application/json',
           },
         },
