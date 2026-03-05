@@ -6,17 +6,21 @@ export class MondayService {
   async getTasks() {
     try {
       const query = `
-        query {
-          boards(ids: 18402272661) {
-            items_page(limit: 50) {
-              items {
-                id
-                name
-              }
+            query {
+            boards(ids: 18402272661) {
+                items_page {
+                items {
+                    id
+                    name
+                    column_values {
+                    id
+                    text
+                    }
+                }
+                }
             }
-          }
-        }
-      `;
+            }
+            `;
 
       if (!process.env.MONDAY_TOKEN) {
         throw new Error('MONDAY_TOKEN não configurado');
