@@ -18,12 +18,16 @@ export class MondayService {
         }
       `;
 
+      if (!process.env.MONDAY_TOKEN) {
+        throw new Error('MONDAY_TOKEN não configurado');
+      }
+
       const response = await axios.post(
         'https://api.monday.com/v2',
         { query },
         {
           headers: {
-            Authorization: process.env.MONDAY_TOKEN,
+            Authorization: `Bearer ${process.env.MONDAY_TOKEN}`,
             'Content-Type': 'application/json',
           },
         },
