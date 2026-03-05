@@ -1,13 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import axios from 'axios';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class MondayService {
+  constructor(private configService: ConfigService) {}
+
   async getTasks() {
+    const token = this.configService.get<string>('MONDAY_TOKEN');
+
     const query = `
       query {
         boards(ids: 18402272661) {
-          items_page {
+          items_page(limit: 50) {
             items {
               id
               name
@@ -22,7 +27,8 @@ export class MondayService {
       { query },
       {
         headers: {
-          Authorization: process.env.MONDAY_TOKEN,
+          Authorization: token,
+          'Content-Type': 'application/json',
         },
       },
     );
