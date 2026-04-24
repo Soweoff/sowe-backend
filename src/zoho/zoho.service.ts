@@ -12,6 +12,12 @@ export class ZohoService {
     const clientSecret = this.configService.get<string>('ZOHO_CLIENT_SECRET');
     const refreshToken = this.configService.get<string>('ZOHO_REFRESH_TOKEN');
 
+    // 👇 ESPIÃO ADICIONADO AQUI 👇
+    console.log('--- TESTE DE LEITURA DO .ENV ---');
+    console.log('ID lido:', clientId);
+    console.log('Secret lido:', clientSecret);
+    console.log('--------------------------------');
+
     const url = `https://accounts.zoho.com/oauth/v2/token?refresh_token=${refreshToken}&client_id=${clientId}&client_secret=${clientSecret}&grant_type=refresh_token`;
 
     try {
