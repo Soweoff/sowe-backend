@@ -190,4 +190,90 @@ export class ZohoService {
       );
     }
   }
+
+  // --- ATUALIZAR EVENTO (EDITAR) ---
+  async updateEvent(
+    eventId: string,
+    eventData: {
+      title: string;
+      start: string;
+      end: string;
+      description?: string;
+      status: string;
+    },
+  ) {
+    const token = await this.getAccessToken();
+
+    try {
+      const calendarsRes = await axios.get(
+        'https://calendar.zoho.com/api/v1/calendars',
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      const realCalendarId = calendarsRes.data.calendars[0].uid;
+
+      // Mantém a nossa lógica de colocar a tag de status na descrição
+      const hiddenStatusTag = `[STATUS:${eventData.status}] \n\n`;
+      const finalDescription = hiddenStatusTag + (eventData.description || '');
+
+      const payload = {
+        title: eventData.title,
+        description: finalDescription,
+        dateandtime: {
+          start: this.toZohoFormat(eventData.start),
+          end: this.toZohoFormat(eventData.end),
+        },
+      };
+
+      const updateUrl = `https://calendar.zoho.com/api/v1/calendars/${realCalendarId}/events/${eventId}`;
+
+      await axios.put(updateUrl, payload, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      return { message: 'Evento atualizado com sucesso!' };
+    } catch (error: any) {
+      console.error(
+        'ZOHO UPDATE ERROR:',
+        error.response?.data || error.message,
+      );
+      throw new HttpException(
+        'Erro ao atualizar evento',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // --- DELETAR EVENTO ---
+  async deleteEvent(eventId: string) {
+    const token = await this.getAccessToken();
+
+    try {
+      const calendarsRes = await axios.get(
+        'https://calendar.zoho.com/api/v1/calendars',
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      const realCalendarId = calendarsRes.data.calendars[0].uid;
+
+      const deleteUrl = `https://calendar.zoho.com/api/v1/calendars/${realCalendarId}/events/${eventId}`;
+
+      await axios.delete(deleteUrl, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      return { message: 'Evento deletado com sucesso!' };
+    } catch (error: any) {
+      console.error(
+        'ZOHO DELETE ERROR:',
+        error.response?.data || error.message,
+      );
+      throw new HttpException(
+        'Erro ao deletar evento',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
 }
