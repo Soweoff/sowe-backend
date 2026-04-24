@@ -12,12 +12,6 @@ export class ZohoService {
     const clientSecret = this.configService.get<string>('ZOHO_CLIENT_SECRET');
     const refreshToken = this.configService.get<string>('ZOHO_REFRESH_TOKEN');
 
-    // 👇 ESPIÃO ADICIONADO AQUI 👇
-    console.log('--- TESTE DE LEITURA DO .ENV ---');
-    console.log('ID lido:', clientId);
-    console.log('Secret lido:', clientSecret);
-    console.log('--------------------------------');
-
     const url = `https://accounts.zoho.com/oauth/v2/token?refresh_token=${refreshToken}&client_id=${clientId}&client_secret=${clientSecret}&grant_type=refresh_token`;
 
     try {
@@ -104,6 +98,73 @@ export class ZohoService {
       );
       throw new HttpException(
         'Erro ao buscar eventos do Zoho',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // --- FUNÇÃO AUXILIAR PARA CRIAR EVENTOS ---
+  // Converte a data do formulário React para o formato da Zoho
+  private toZohoFormat(dateString: string): string {
+    const date = new Date(dateString);
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    const h = String(date.getHours()).padStart(2, '0');
+    const min = String(date.getMinutes()).padStart(2, '0');
+    const sec = '00';
+
+    // Fuso horário padrão do Brasil (-0300)
+    return `${y}${m}${d}T${h}${min}${sec}-0300`;
+  }
+
+  // --- 3. MÉTODO PARA CRIAR O EVENTO ---
+  async createEvent(eventData: {
+    title: string;
+    start: string;
+    end: string;
+    description?: string;
+  }) {
+    const token = await this.getAccessToken();
+
+    try {
+      // 1. Pega o UID do calendário
+      const calendarsRes = await axios.get(
+        'https://calendar.zoho.com/api/v1/calendars',
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      const realCalendarId = calendarsRes.data.calendars[0].uid;
+
+      // 2. Monta o pacote de dados do jeito que a Zoho exige
+      const payload = {
+        title: eventData.title,
+        description: eventData.description || '',
+        dateandtime: {
+          start: this.toZohoFormat(eventData.start),
+          end: this.toZohoFormat(eventData.end),
+        },
+      };
+
+      const createUrl = `https://calendar.zoho.com/api/v1/calendars/${realCalendarId}/events`;
+
+      // 3. Dispara o POST para o servidor da Zoho
+      const response = await axios.post(createUrl, payload, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      return {
+        message: 'Evento criado com sucesso no Zoho!',
+        data: response.data,
+      };
+    } catch (error: any) {
+      console.error(
+        'ZOHO CREATE ERROR:',
+        error.response?.data || error.message,
+      );
+      throw new HttpException(
+        'Erro ao criar evento no Zoho',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
