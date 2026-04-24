@@ -42,7 +42,18 @@ export class ZohoService {
     return zDate;
   }
 
-  // --- BUSCAR EVENTOS E LER A COR ---
+  private toZohoFormat(dateString: string): string {
+    const date = new Date(dateString);
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    const h = String(date.getHours()).padStart(2, '0');
+    const min = String(date.getMinutes()).padStart(2, '0');
+    const sec = '00';
+    return `${y}${m}${d}T${h}${min}${sec}-0300`;
+  }
+
+  // --- BUSCAR EVENTOS ---
   async getEvents() {
     const token = await this.getAccessToken();
 
@@ -70,16 +81,14 @@ export class ZohoService {
       if (events && events.length > 0) {
         return events.map((event: any) => {
           let rawDesc = event.description || '';
-          let status = 'Agendado'; // Padrão
-          let color = '#6c63ff'; // Roxo padrão
+          let status = 'Agendado';
+          let color = '#6c63ff';
 
-          // Verifica se tem a nossa Tag secreta e extrai
           const statusMatch = rawDesc.match(/\[STATUS:(.*?)\]/);
           if (statusMatch) {
             status = statusMatch[1].trim();
             rawDesc = rawDesc.replace(statusMatch[0], '').trim();
 
-            // Define a cor baseada no status
             if (status === 'Feito') color = '#22c55e';
             else if (status === 'Em andamento') color = '#f59e0b';
             else if (status === 'Não iniciado') color = '#64748b';
@@ -109,18 +118,7 @@ export class ZohoService {
     }
   }
 
-  private toZohoFormat(dateString: string): string {
-    const date = new Date(dateString);
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    const h = String(date.getHours()).padStart(2, '0');
-    const min = String(date.getMinutes()).padStart(2, '0');
-    const sec = '00';
-    return `${y}${m}${d}T${h}${min}${sec}-0300`;
-  }
-
-  // --- CRIAR EVENTO (COM RECORRÊNCIA) ---
+  // --- CRIAR EVENTO ---
   async createEvent(eventData: {
     title: string;
     start: string;
@@ -145,7 +143,8 @@ export class ZohoService {
       const hiddenStatusTag = `[STATUS:${eventData.status}] \n\n`;
       const finalDescription = hiddenStatusTag + (eventData.description || '');
 
-      const payload: any = {
+      // 1. Criamos o objeto do evento
+      const eventObj: any = {
         title: eventData.title,
         description: finalDescription,
         dateandtime: {
@@ -154,20 +153,19 @@ export class ZohoService {
         },
       };
 
-      // --- LÓGICA DE RECORRÊNCIA (RRULE) ---
       if (
         eventData.isRecurring &&
         eventData.repeatUntil &&
         eventData.daysOfWeek &&
         eventData.daysOfWeek.length > 0
       ) {
-        // Converte data (2026-06-30 -> 20260630)
         const untilDate = eventData.repeatUntil.replace(/-/g, '');
         const days = eventData.daysOfWeek.join(',');
-
-        // Formato oficial de repetição
-        payload.rrule = `FREQ=WEEKLY;BYDAY=${days};UNTIL=${untilDate}T235959Z`;
+        eventObj.rrule = `FREQ=WEEKLY;BYDAY=${days};UNTIL=${untilDate}T235959Z`;
       }
+
+      // 2. Embrulhamos dentro do 'eventdata' como o Zoho exige!
+      const payload = { eventdata: [eventObj] };
 
       const createUrl = `https://calendar.zoho.com/api/v1/calendars/${realCalendarId}/events`;
 
@@ -212,12 +210,19 @@ export class ZohoService {
         },
       );
       const realCalendarId = calendarsRes.data.calendars[0].uid;
+      const eventUrl = `https://calendar.zoho.com/api/v1/calendars/${realCalendarId}/events/${eventId}`;
 
-      // Mantém a nossa lógica de colocar a tag de status na descrição
+      // 1. Busca rápida para pegar o ETAG do evento
+      const eventInfo = await axios.get(eventUrl, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const etag = eventInfo.data.events[0].etag;
+
       const hiddenStatusTag = `[STATUS:${eventData.status}] \n\n`;
       const finalDescription = hiddenStatusTag + (eventData.description || '');
 
-      const payload = {
+      // 2. Cria o objeto e embrulha no eventdata
+      const eventObj = {
         title: eventData.title,
         description: finalDescription,
         dateandtime: {
@@ -225,11 +230,11 @@ export class ZohoService {
           end: this.toZohoFormat(eventData.end),
         },
       };
+      const payload = { eventdata: [eventObj] };
 
-      const updateUrl = `https://calendar.zoho.com/api/v1/calendars/${realCalendarId}/events/${eventId}`;
-
-      await axios.put(updateUrl, payload, {
-        headers: { Authorization: `Bearer ${token}` },
+      // 3. Envia o PUT passando o ETAG no cabeçalho
+      await axios.put(eventUrl, payload, {
+        headers: { Authorization: `Bearer ${token}`, etag: etag },
       });
 
       return { message: 'Evento atualizado com sucesso!' };
@@ -257,11 +262,17 @@ export class ZohoService {
         },
       );
       const realCalendarId = calendarsRes.data.calendars[0].uid;
+      const eventUrl = `https://calendar.zoho.com/api/v1/calendars/${realCalendarId}/events/${eventId}`;
 
-      const deleteUrl = `https://calendar.zoho.com/api/v1/calendars/${realCalendarId}/events/${eventId}`;
-
-      await axios.delete(deleteUrl, {
+      // 1. Busca rápida para pegar o ETAG do evento
+      const eventInfo = await axios.get(eventUrl, {
         headers: { Authorization: `Bearer ${token}` },
+      });
+      const etag = eventInfo.data.events[0].etag;
+
+      // 2. Envia o DELETE passando o ETAG obrigatório no cabeçalho
+      await axios.delete(eventUrl, {
+        headers: { Authorization: `Bearer ${token}`, etag: etag },
       });
 
       return { message: 'Evento deletado com sucesso!' };
