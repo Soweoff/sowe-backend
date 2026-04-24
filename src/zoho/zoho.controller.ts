@@ -21,6 +21,7 @@ export class ZohoController {
       start: string;
       end: string;
       description?: string;
+      status: string;
     },
   ) {
     return this.zohoService.createEvent(body);

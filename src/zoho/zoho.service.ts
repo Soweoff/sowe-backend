@@ -6,7 +6,6 @@ import axios from 'axios';
 export class ZohoService {
   constructor(private configService: ConfigService) {}
 
-  // 1. Método para renovar o Access Token
   async getAccessToken(): Promise<string> {
     const clientId = this.configService.get<string>('ZOHO_CLIENT_ID');
     const clientSecret = this.configService.get<string>('ZOHO_CLIENT_SECRET');
@@ -26,16 +25,11 @@ export class ZohoService {
     }
   }
 
-  // Função auxiliar para arrumar a data maluca do Zoho para o FullCalendar
   private formatZohoDate(zDate: string): string | null {
     if (!zDate) return null;
-
-    // Se for dia todo (ex: 20260424) -> 2026-04-24
     if (zDate.length === 8) {
       return `${zDate.substring(0, 4)}-${zDate.substring(4, 6)}-${zDate.substring(6, 8)}`;
     }
-
-    // Se tiver horário (ex: 20260424T103000-0300) -> 2026-04-24T10:30:00
     if (zDate.length >= 15 && zDate.includes('T')) {
       const y = zDate.substring(0, 4);
       const m = zDate.substring(4, 6);
@@ -45,48 +39,60 @@ export class ZohoService {
       const sec = zDate.substring(13, 15);
       return `${y}-${m}-${d}T${h}:${min}:${sec}`;
     }
-
     return zDate;
   }
 
-  // 2. Método para buscar os eventos
+  // --- BUSCAR EVENTOS E LER A COR ---
   async getEvents() {
     const token = await this.getAccessToken();
 
     try {
-      // A. Primeiro, buscamos a lista de calendários para pegar o UID real
-      const calendarsUrl = 'https://calendar.zoho.com/api/v1/calendars';
-      const calendarsRes = await axios.get(calendarsUrl, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const calendarsRes = await axios.get(
+        'https://calendar.zoho.com/api/v1/calendars',
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
 
       const calendars = calendarsRes.data.calendars;
       if (!calendars || calendars.length === 0) return [];
-
-      // Pegamos o UID do seu primeiro calendário (o principal)
       const realCalendarId = calendars[0].uid;
 
-      // B. Agora buscamos os eventos usando o UID correto
-      const eventsUrl = `https://calendar.zoho.com/api/v1/calendars/${realCalendarId}/events`;
-      const eventsRes = await axios.get(eventsUrl, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const eventsRes = await axios.get(
+        `https://calendar.zoho.com/api/v1/calendars/${realCalendarId}/events`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
 
       const events = eventsRes.data.events;
 
-      // C. Formatamos para o React
       if (events && events.length > 0) {
         return events.map((event: any) => {
-          const start = event.dateandtime?.start || '';
-          const end = event.dateandtime?.end || '';
+          let rawDesc = event.description || '';
+          let status = 'Agendado'; // Padrão
+          let color = '#6c63ff'; // Roxo padrão
+
+          // Verifica se tem a nossa Tag secreta e extrai
+          const statusMatch = rawDesc.match(/\[STATUS:(.*?)\]/);
+          if (statusMatch) {
+            status = statusMatch[1].trim();
+            rawDesc = rawDesc.replace(statusMatch[0], '').trim();
+
+            // Define a cor baseada no status
+            if (status === 'Feito') color = '#22c55e';
+            else if (status === 'Em andamento') color = '#f59e0b';
+            else if (status === 'Não iniciado') color = '#64748b';
+          }
 
           return {
             id: event.uid,
             title: event.title,
-            start: this.formatZohoDate(start),
-            end: this.formatZohoDate(end),
-            backgroundColor: '#6c63ff',
-            description: event.description || 'Sem descrição adicional',
+            start: this.formatZohoDate(event.dateandtime?.start),
+            end: this.formatZohoDate(event.dateandtime?.end),
+            backgroundColor: color,
+            description: rawDesc || 'Sem descrição adicional',
+            status: status, // Enviando o status limpo para o React
           };
         });
       }
@@ -103,8 +109,6 @@ export class ZohoService {
     }
   }
 
-  // --- FUNÇÃO AUXILIAR PARA CRIAR EVENTOS ---
-  // Converte a data do formulário React para o formato da Zoho
   private toZohoFormat(dateString: string): string {
     const date = new Date(dateString);
     const y = date.getFullYear();
@@ -113,22 +117,20 @@ export class ZohoService {
     const h = String(date.getHours()).padStart(2, '0');
     const min = String(date.getMinutes()).padStart(2, '0');
     const sec = '00';
-
-    // Fuso horário padrão do Brasil (-0300)
     return `${y}${m}${d}T${h}${min}${sec}-0300`;
   }
 
-  // --- 3. MÉTODO PARA CRIAR O EVENTO ---
+  // --- CRIAR O EVENTO COM A TAG INVISÍVEL ---
   async createEvent(eventData: {
     title: string;
     start: string;
     end: string;
     description?: string;
+    status: string;
   }) {
     const token = await this.getAccessToken();
 
     try {
-      // 1. Pega o UID do calendário
       const calendarsRes = await axios.get(
         'https://calendar.zoho.com/api/v1/calendars',
         {
@@ -137,10 +139,13 @@ export class ZohoService {
       );
       const realCalendarId = calendarsRes.data.calendars[0].uid;
 
-      // 2. Monta o pacote de dados do jeito que a Zoho exige
+      // Embutindo o Status na descrição antes de enviar
+      const hiddenStatusTag = `[STATUS:${eventData.status}] \n\n`;
+      const finalDescription = hiddenStatusTag + (eventData.description || '');
+
       const payload = {
         title: eventData.title,
-        description: eventData.description || '',
+        description: finalDescription,
         dateandtime: {
           start: this.toZohoFormat(eventData.start),
           end: this.toZohoFormat(eventData.end),
@@ -149,7 +154,6 @@ export class ZohoService {
 
       const createUrl = `https://calendar.zoho.com/api/v1/calendars/${realCalendarId}/events`;
 
-      // 3. Dispara o POST para o servidor da Zoho
       const response = await axios.post(createUrl, payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
