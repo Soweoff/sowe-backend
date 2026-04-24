@@ -15,6 +15,9 @@ export class ZohoService {
 
     try {
       const response = await axios.post(url);
+      if (response.data.error) {
+        throw new Error(response.data.error);
+      }
       return response.data.access_token;
     } catch (error: any) {
       console.error('ZOHO AUTH ERROR:', error.response?.data || error.message);
@@ -143,11 +146,11 @@ export class ZohoService {
       const hiddenStatusTag = `[STATUS:${eventData.status}] \n\n`;
       const finalDescription = hiddenStatusTag + (eventData.description || '');
 
-      // 1. Criamos o objeto do evento
       const eventObj: any = {
         title: eventData.title,
         description: finalDescription,
         dateandtime: {
+          timezone: 'America/Sao_Paulo',
           start: this.toZohoFormat(eventData.start),
           end: this.toZohoFormat(eventData.end),
         },
@@ -164,13 +167,15 @@ export class ZohoService {
         eventObj.rrule = `FREQ=WEEKLY;BYDAY=${days};UNTIL=${untilDate}T235959Z`;
       }
 
-      // 2. Embrulhamos dentro do 'eventdata' como o Zoho exige!
-      const payload = { eventdata: [eventObj] };
-
+      // O PULO DO GATO ESTÁ AQUI: Note os colchetes [ ] transformando o eventObj em Array!
+      const payloadString = `eventdata=${encodeURIComponent(JSON.stringify([eventObj]))}`;
       const createUrl = `https://calendar.zoho.com/api/v1/calendars/${realCalendarId}/events`;
 
-      const response = await axios.post(createUrl, payload, {
-        headers: { Authorization: `Bearer ${token}` },
+      const response = await axios.post(createUrl, payloadString, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
       });
 
       return {
@@ -221,20 +226,26 @@ export class ZohoService {
       const hiddenStatusTag = `[STATUS:${eventData.status}] \n\n`;
       const finalDescription = hiddenStatusTag + (eventData.description || '');
 
-      // 2. Cria o objeto e embrulha no eventdata
       const eventObj = {
         title: eventData.title,
         description: finalDescription,
         dateandtime: {
+          timezone: 'America/Sao_Paulo',
           start: this.toZohoFormat(eventData.start),
           end: this.toZohoFormat(eventData.end),
         },
       };
-      const payload = { eventdata: [eventObj] };
 
-      // 3. Envia o PUT passando o ETAG no cabeçalho
-      await axios.put(eventUrl, payload, {
-        headers: { Authorization: `Bearer ${token}`, etag: etag },
+      // Colchetes [ ] adicionados para Atualizar também!
+      const payloadString = `eventdata=${encodeURIComponent(JSON.stringify([eventObj]))}`;
+
+      // 2. Envia o PUT
+      await axios.put(eventUrl, payloadString, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          ETag: String(etag),
+        },
       });
 
       return { message: 'Evento atualizado com sucesso!' };
@@ -264,15 +275,20 @@ export class ZohoService {
       const realCalendarId = calendarsRes.data.calendars[0].uid;
       const eventUrl = `https://calendar.zoho.com/api/v1/calendars/${realCalendarId}/events/${eventId}`;
 
-      // 1. Busca rápida para pegar o ETAG do evento
+      // 1. Busca rápida para pegar a impressão digital (ETAG) obrigatória
       const eventInfo = await axios.get(eventUrl, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const etag = eventInfo.data.events[0].etag;
 
-      // 2. Envia o DELETE passando o ETAG obrigatório no cabeçalho
-      await axios.delete(eventUrl, {
-        headers: { Authorization: `Bearer ${token}`, etag: etag },
+      // 2. Usamos axios de forma diferente para impedir que ele arranque nosso ETag
+      await axios({
+        method: 'DELETE',
+        url: eventUrl,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ETag: String(etag),
+        },
       });
 
       return { message: 'Evento deletado com sucesso!' };
