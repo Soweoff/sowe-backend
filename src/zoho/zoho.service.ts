@@ -1,5 +1,6 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
 
 @Injectable()
 export class ZohoService {
@@ -14,14 +15,10 @@ export class ZohoService {
     const url = `https://accounts.zoho.com/oauth/v2/token?refresh_token=${refreshToken}&client_id=${clientId}&client_secret=${clientSecret}&grant_type=refresh_token`;
 
     try {
-      const response = await fetch(url, { method: 'POST' });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Erro ao obter token do Zoho');
-      }
-      return data.access_token;
-    } catch (error) {
+      const response = await axios.post(url);
+      return response.data.access_token;
+    } catch (error: any) {
+      console.error('ZOHO AUTH ERROR:', error.response?.data || error.message);
       throw new HttpException(
         'Falha na autenticação com o Zoho',
         HttpStatus.UNAUTHORIZED,
@@ -29,36 +26,75 @@ export class ZohoService {
     }
   }
 
-  // 2. Método para buscar os eventos do Calendário
+  // Função auxiliar para arrumar a data maluca do Zoho para o FullCalendar
+  private formatZohoDate(zDate: string): string | null {
+    if (!zDate) return null;
+
+    // Se for dia todo (ex: 20260424) -> 2026-04-24
+    if (zDate.length === 8) {
+      return `${zDate.substring(0, 4)}-${zDate.substring(4, 6)}-${zDate.substring(6, 8)}`;
+    }
+
+    // Se tiver horário (ex: 20260424T103000-0300) -> 2026-04-24T10:30:00
+    if (zDate.length >= 15 && zDate.includes('T')) {
+      const y = zDate.substring(0, 4);
+      const m = zDate.substring(4, 6);
+      const d = zDate.substring(6, 8);
+      const h = zDate.substring(9, 11);
+      const min = zDate.substring(11, 13);
+      const sec = zDate.substring(13, 15);
+      return `${y}-${m}-${d}T${h}:${min}:${sec}`;
+    }
+
+    return zDate;
+  }
+
+  // 2. Método para buscar os eventos
   async getEvents() {
     const token = await this.getAccessToken();
-    const calendarId =
-      this.configService.get<string>('ZOHO_CALENDAR_ID') || 'primary';
-
-    // A API do calendário exige este endpoint
-    const url = `https://calendar.zoho.com/api/v1/calendars/${calendarId}/events`;
 
     try {
-      const response = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+      // A. Primeiro, buscamos a lista de calendários para pegar o UID real
+      const calendarsUrl = 'https://calendar.zoho.com/api/v1/calendars';
+      const calendarsRes = await axios.get(calendarsUrl, {
+        headers: { Authorization: `Bearer ${token}` },
       });
 
-      const data = await response.json();
+      const calendars = calendarsRes.data.calendars;
+      if (!calendars || calendars.length === 0) return [];
 
-      // Formatamos o retorno para o padrão que o seu React (FullCalendar) já entende!
-      if (data && data.events) {
-        return data.events.map((event: any) => ({
-          id: event.uid,
-          title: event.title,
-          start: event.dateandtime.start,
-          end: event.dateandtime.end,
-          description: event.description,
-        }));
+      // Pegamos o UID do seu primeiro calendário (o principal)
+      const realCalendarId = calendars[0].uid;
+
+      // B. Agora buscamos os eventos usando o UID correto
+      const eventsUrl = `https://calendar.zoho.com/api/v1/calendars/${realCalendarId}/events`;
+      const eventsRes = await axios.get(eventsUrl, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const events = eventsRes.data.events;
+
+      // C. Formatamos para o React
+      if (events && events.length > 0) {
+        return events.map((event: any) => {
+          const start = event.dateandtime?.start || '';
+          const end = event.dateandtime?.end || '';
+
+          return {
+            id: event.uid,
+            title: event.title,
+            start: this.formatZohoDate(start),
+            end: this.formatZohoDate(end),
+            backgroundColor: '#6c63ff',
+          };
+        });
       }
       return [];
-    } catch (error) {
+    } catch (error: any) {
+      console.error(
+        'ZOHO EVENTS ERROR:',
+        error.response?.data || error.message,
+      );
       throw new HttpException(
         'Erro ao buscar eventos do Zoho',
         HttpStatus.INTERNAL_SERVER_ERROR,
