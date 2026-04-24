@@ -167,11 +167,13 @@ export class ZohoService {
         eventObj.rrule = `FREQ=WEEKLY;BYDAY=${days};UNTIL=${untilDate}T235959Z`;
       }
 
-      // O PULO DO GATO ESTÁ AQUI: Note os colchetes [ ] transformando o eventObj em Array!
-      const payloadString = `eventdata=${encodeURIComponent(JSON.stringify([eventObj]))}`;
+      // O PULO DO GATO FINAL: Usando URLSearchParams nativo do Node.js
+      const params = new URLSearchParams();
+      params.append('eventdata', JSON.stringify(eventObj));
+
       const createUrl = `https://calendar.zoho.com/api/v1/calendars/${realCalendarId}/events`;
 
-      const response = await axios.post(createUrl, payloadString, {
+      const response = await axios.post(createUrl, params, {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -217,7 +219,6 @@ export class ZohoService {
       const realCalendarId = calendarsRes.data.calendars[0].uid;
       const eventUrl = `https://calendar.zoho.com/api/v1/calendars/${realCalendarId}/events/${eventId}`;
 
-      // 1. Busca rápida para pegar o ETAG do evento
       const eventInfo = await axios.get(eventUrl, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -236,11 +237,11 @@ export class ZohoService {
         },
       };
 
-      // Colchetes [ ] adicionados para Atualizar também!
-      const payloadString = `eventdata=${encodeURIComponent(JSON.stringify([eventObj]))}`;
+      // Usando URLSearchParams para atualizar também!
+      const params = new URLSearchParams();
+      params.append('eventdata', JSON.stringify(eventObj));
 
-      // 2. Envia o PUT
-      await axios.put(eventUrl, payloadString, {
+      await axios.put(eventUrl, params, {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -275,13 +276,11 @@ export class ZohoService {
       const realCalendarId = calendarsRes.data.calendars[0].uid;
       const eventUrl = `https://calendar.zoho.com/api/v1/calendars/${realCalendarId}/events/${eventId}`;
 
-      // 1. Busca rápida para pegar a impressão digital (ETAG) obrigatória
       const eventInfo = await axios.get(eventUrl, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const etag = eventInfo.data.events[0].etag;
 
-      // 2. Usamos axios de forma diferente para impedir que ele arranque nosso ETag
       await axios({
         method: 'DELETE',
         url: eventUrl,
