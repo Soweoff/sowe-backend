@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { MondayModule } from './monday/monday.module';
+import { ZohoModule } from './zoho/zoho.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { MondayModule } from './monday/monday.module';
     UsersModule,
     PrismaModule,
     AuthModule,
+    ZohoModule,
   ],
   controllers: [AppController],
   providers: [AppService],
