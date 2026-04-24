@@ -92,6 +92,7 @@ export class ZohoService {
             start: this.formatZohoDate(start),
             end: this.formatZohoDate(end),
             backgroundColor: '#6c63ff',
+            description: event.description || 'Sem descrição adicional',
           };
         });
       }
