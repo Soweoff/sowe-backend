@@ -6,14 +6,14 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 export class ZohoController {
   constructor(private readonly zohoService: ZohoService) {}
 
-  @UseGuards(JwtAuthGuard) // Protegendo a rota (ID8)
+  @UseGuards(JwtAuthGuard)
   @Get('events')
-  async getEvents() {
-    return await this.zohoService.getEvents();
+  getEvents() {
+    return this.zohoService.getEvents();
   }
 
   @Post('events')
-  @UseGuards(JwtAuthGuard) // Mantém a segurança, só logados podem criar
+  @UseGuards(JwtAuthGuard)
   createEvent(
     @Body()
     body: {
@@ -22,6 +22,9 @@ export class ZohoController {
       end: string;
       description?: string;
       status: string;
+      isRecurring?: boolean;
+      repeatUntil?: string;
+      daysOfWeek?: string[];
     },
   ) {
     return this.zohoService.createEvent(body);

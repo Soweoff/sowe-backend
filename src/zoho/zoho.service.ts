@@ -92,7 +92,7 @@ export class ZohoService {
             end: this.formatZohoDate(event.dateandtime?.end),
             backgroundColor: color,
             description: rawDesc || 'Sem descrição adicional',
-            status: status, // Enviando o status limpo para o React
+            status: status,
           };
         });
       }
@@ -120,13 +120,16 @@ export class ZohoService {
     return `${y}${m}${d}T${h}${min}${sec}-0300`;
   }
 
-  // --- CRIAR O EVENTO COM A TAG INVISÍVEL ---
+  // --- CRIAR EVENTO (COM RECORRÊNCIA) ---
   async createEvent(eventData: {
     title: string;
     start: string;
     end: string;
     description?: string;
     status: string;
+    isRecurring?: boolean;
+    repeatUntil?: string;
+    daysOfWeek?: string[];
   }) {
     const token = await this.getAccessToken();
 
@@ -139,11 +142,10 @@ export class ZohoService {
       );
       const realCalendarId = calendarsRes.data.calendars[0].uid;
 
-      // Embutindo o Status na descrição antes de enviar
       const hiddenStatusTag = `[STATUS:${eventData.status}] \n\n`;
       const finalDescription = hiddenStatusTag + (eventData.description || '');
 
-      const payload = {
+      const payload: any = {
         title: eventData.title,
         description: finalDescription,
         dateandtime: {
@@ -151,6 +153,21 @@ export class ZohoService {
           end: this.toZohoFormat(eventData.end),
         },
       };
+
+      // --- LÓGICA DE RECORRÊNCIA (RRULE) ---
+      if (
+        eventData.isRecurring &&
+        eventData.repeatUntil &&
+        eventData.daysOfWeek &&
+        eventData.daysOfWeek.length > 0
+      ) {
+        // Converte data (2026-06-30 -> 20260630)
+        const untilDate = eventData.repeatUntil.replace(/-/g, '');
+        const days = eventData.daysOfWeek.join(',');
+
+        // Formato oficial de repetição
+        payload.rrule = `FREQ=WEEKLY;BYDAY=${days};UNTIL=${untilDate}T235959Z`;
+      }
 
       const createUrl = `https://calendar.zoho.com/api/v1/calendars/${realCalendarId}/events`;
 
