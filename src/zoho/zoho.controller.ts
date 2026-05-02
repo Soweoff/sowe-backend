@@ -6,24 +6,25 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ZohoService } from './zoho.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('zoho')
+@UseGuards(JwtAuthGuard)
 export class ZohoController {
   constructor(private readonly zohoService: ZohoService) {}
 
-  @UseGuards(JwtAuthGuard)
   @Get('events')
-  getEvents() {
-    return this.zohoService.getEvents();
+  getEvents(@Query('calendar') calendar?: string) {
+    return this.zohoService.getEvents(calendar);
   }
 
   @Post('events')
-  @UseGuards(JwtAuthGuard)
   createEvent(
+    @Query('calendar') calendar: string | undefined,
     @Body()
     body: {
       title: string;
@@ -36,12 +37,12 @@ export class ZohoController {
       daysOfWeek?: string[];
     },
   ) {
-    return this.zohoService.createEvent(body);
+    return this.zohoService.createEvent(calendar, body);
   }
 
   @Put('events/:id')
-  @UseGuards(JwtAuthGuard)
   updateEvent(
+    @Query('calendar') calendar: string | undefined,
     @Param('id') id: string,
     @Body()
     body: {
@@ -52,12 +53,14 @@ export class ZohoController {
       status: string;
     },
   ) {
-    return this.zohoService.updateEvent(id, body);
+    return this.zohoService.updateEvent(calendar, id, body);
   }
 
   @Delete('events/:id')
-  @UseGuards(JwtAuthGuard)
-  deleteEvent(@Param('id') id: string) {
-    return this.zohoService.deleteEvent(id);
+  deleteEvent(
+    @Query('calendar') calendar: string | undefined,
+    @Param('id') id: string,
+  ) {
+    return this.zohoService.deleteEvent(calendar, id);
   }
 }
