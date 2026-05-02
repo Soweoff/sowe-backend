@@ -69,7 +69,6 @@ export class ZohoService {
   private normalizeCalendar(calendar?: string): CalendarKey {
     if (calendar === 'personal') return 'personal';
     if (calendar === 'tnk_store') return 'tnk_store';
-
     return 'tnk_store';
   }
 
@@ -106,6 +105,50 @@ export class ZohoService {
     return `${y}${m}${d}T${h}${min}00-0300`;
   }
 
+  private getEventDuration(
+    start?: string | null,
+    end?: string | null,
+  ): string | undefined {
+    if (!start || !end) return undefined;
+
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      return undefined;
+    }
+
+    const diffMs = endDate.getTime() - startDate.getTime();
+
+    if (diffMs <= 0) return undefined;
+
+    const totalMinutes = Math.floor(diffMs / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  }
+
+  private buildFullCalendarRRule(
+    event: any,
+    start?: string | null,
+  ): string | undefined {
+    if (!event.rrule || !start) return undefined;
+
+    const startDate = new Date(start);
+
+    if (Number.isNaN(startDate.getTime())) return event.rrule;
+
+    const y = startDate.getFullYear();
+    const m = String(startDate.getMonth() + 1).padStart(2, '0');
+    const d = String(startDate.getDate()).padStart(2, '0');
+    const h = String(startDate.getHours()).padStart(2, '0');
+    const min = String(startDate.getMinutes()).padStart(2, '0');
+    const s = String(startDate.getSeconds()).padStart(2, '0');
+
+    return `DTSTART:${y}${m}${d}T${h}${min}${s}\nRRULE:${event.rrule}`;
+  }
+
   async getEvents(calendar?: string) {
     const calendarKey = this.normalizeCalendar(calendar);
     const token = await this.getAccessToken();
@@ -139,12 +182,20 @@ export class ZohoService {
           else if (status === 'Não iniciado') color = '#64748b';
         }
 
+        const start = this.formatZohoDate(event.dateandtime?.start);
+        const end = this.formatZohoDate(event.dateandtime?.end);
+        const rrule = this.buildFullCalendarRRule(event, start);
+        const duration = this.getEventDuration(start, end);
+
         return {
           id: event.uid,
           title: event.title,
-          start: this.formatZohoDate(event.dateandtime?.start),
-          end: this.formatZohoDate(event.dateandtime?.end),
+          start,
+          end,
+          rrule,
+          duration,
           backgroundColor: color,
+          borderColor: color,
           description: rawDesc || 'Sem descrição adicional',
           status,
           calendar: calendarKey,
@@ -202,6 +253,7 @@ export class ZohoService {
       ) {
         const untilDate = eventData.repeatUntil.replace(/-/g, '');
         const days = eventData.daysOfWeek.join(',');
+
         eventObj.rrule = `FREQ=WEEKLY;BYDAY=${days};UNTIL=${untilDate}T235959Z`;
       }
 
