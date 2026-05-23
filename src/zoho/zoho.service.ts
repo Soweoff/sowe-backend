@@ -3,6 +3,26 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 
 type CalendarKey = 'personal' | 'tnk_store';
+type ReminderAction = 'email' | 'popup' | 'notification';
+
+interface ZohoEventPayload {
+  title: string;
+  start: string;
+  end: string;
+  description?: string;
+  status?: string;
+
+  isRecurring?: boolean;
+  repeatUntil?: string;
+  daysOfWeek?: string[];
+
+  reminderEnabled?: boolean;
+  reminderAction?: ReminderAction;
+  reminderMinutes?: number;
+
+  notifyPersonal?: boolean;
+  attendeeEmail?: string;
+}
 
 @Injectable()
 export class ZohoService {
@@ -149,6 +169,67 @@ export class ZohoService {
     return `DTSTART:${y}${m}${d}T${h}${min}${s}\nRRULE:${event.rrule}`;
   }
 
+  private buildReminders(eventData: ZohoEventPayload) {
+    if (!eventData.reminderEnabled) return undefined;
+
+    const action: ReminderAction = eventData.reminderAction || 'notification';
+    const minutes = Number(eventData.reminderMinutes ?? 5);
+
+    if (!Number.isFinite(minutes) || minutes < 0) {
+      throw new HttpException(
+        'O tempo do lembrete precisa ser um número válido em minutos.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    return [
+      {
+        action,
+        minutes,
+      },
+    ];
+  }
+
+  private buildPersonalAttendee(eventData: ZohoEventPayload) {
+    if (!eventData.notifyPersonal) return undefined;
+
+    const email =
+      eventData.attendeeEmail?.trim() ||
+      this.configService.get<string>('ZOHO_PERSONAL_NOTIFICATION_EMAIL');
+
+    if (!email) return undefined;
+
+    return [
+      {
+        email,
+        permission: 1,
+        attendance: 1,
+      },
+    ];
+  }
+
+  private applyNotificationsToEventObj(
+    eventObj: any,
+    eventData: ZohoEventPayload,
+  ) {
+    const reminders = this.buildReminders(eventData);
+    const attendees = this.buildPersonalAttendee(eventData);
+
+    if (reminders) {
+      eventObj.reminders = reminders;
+      eventObj.calendar_alarm = true;
+    } else {
+      eventObj.calendar_alarm = false;
+    }
+
+    if (attendees) {
+      eventObj.attendees = attendees;
+      eventObj.notify_attendee = 2;
+    } else {
+      eventObj.notify_attendee = 0;
+    }
+  }
+
   async getEvents(calendar?: string) {
     const calendarKey = this.normalizeCalendar(calendar);
     const token = await this.getAccessToken();
@@ -199,6 +280,9 @@ export class ZohoService {
           description: rawDesc || 'Sem descrição adicional',
           status,
           calendar: calendarKey,
+          reminders: event.reminders || [],
+          calendarAlarm: event.calendar_alarm || false,
+          attendees: event.attendees || [],
         };
       });
     } catch (error: any) {
@@ -214,19 +298,7 @@ export class ZohoService {
     }
   }
 
-  async createEvent(
-    calendar: string | undefined,
-    eventData: {
-      title: string;
-      start: string;
-      end: string;
-      description?: string;
-      status?: string;
-      isRecurring?: boolean;
-      repeatUntil?: string;
-      daysOfWeek?: string[];
-    },
-  ) {
+  async createEvent(calendar: string | undefined, eventData: ZohoEventPayload) {
     const calendarKey = this.normalizeCalendar(calendar);
     const token = await this.getAccessToken();
     const calendarId = this.getCalendarId(calendarKey);
@@ -244,6 +316,8 @@ export class ZohoService {
           end: this.toZohoFormat(eventData.end),
         },
       };
+
+      this.applyNotificationsToEventObj(eventObj, eventData);
 
       if (
         eventData.isRecurring &&
@@ -292,13 +366,7 @@ export class ZohoService {
   async updateEvent(
     calendar: string | undefined,
     eventId: string,
-    eventData: {
-      title: string;
-      start: string;
-      end: string;
-      description?: string;
-      status?: string;
-    },
+    eventData: ZohoEventPayload,
   ) {
     const calendarKey = this.normalizeCalendar(calendar);
     const token = await this.getAccessToken();
@@ -320,7 +388,7 @@ export class ZohoService {
       const status = eventData.status || 'Agendado';
       const hiddenStatusTag = `[STATUS:${status}] \n\n`;
 
-      const eventObj = {
+      const eventObj: any = {
         title: eventData.title,
         description: hiddenStatusTag + (eventData.description || ''),
         dateandtime: {
@@ -329,6 +397,20 @@ export class ZohoService {
           end: this.toZohoFormat(eventData.end),
         },
       };
+
+      this.applyNotificationsToEventObj(eventObj, eventData);
+
+      if (
+        eventData.isRecurring &&
+        eventData.repeatUntil &&
+        eventData.daysOfWeek &&
+        eventData.daysOfWeek.length > 0
+      ) {
+        const untilDate = eventData.repeatUntil.replace(/-/g, '');
+        const days = eventData.daysOfWeek.join(',');
+
+        eventObj.rrule = `FREQ=WEEKLY;BYDAY=${days};UNTIL=${untilDate}T235959Z`;
+      }
 
       const params = new URLSearchParams();
       params.append('eventdata', JSON.stringify(eventObj));

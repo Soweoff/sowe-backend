@@ -12,6 +12,27 @@ import {
 import { ZohoService } from './zoho.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
+type ReminderAction = 'email' | 'popup' | 'notification';
+
+export interface ZohoEventBody {
+  title: string;
+  start: string;
+  end: string;
+  description?: string;
+  status?: string;
+
+  isRecurring?: boolean;
+  repeatUntil?: string;
+  daysOfWeek?: string[];
+
+  reminderEnabled?: boolean;
+  reminderAction?: ReminderAction;
+  reminderMinutes?: number;
+
+  notifyPersonal?: boolean;
+  attendeeEmail?: string;
+}
+
 @Controller('zoho')
 @UseGuards(JwtAuthGuard)
 export class ZohoController {
@@ -25,17 +46,7 @@ export class ZohoController {
   @Post('events')
   createEvent(
     @Query('calendar') calendar: string | undefined,
-    @Body()
-    body: {
-      title: string;
-      start: string;
-      end: string;
-      description?: string;
-      status: string;
-      isRecurring?: boolean;
-      repeatUntil?: string;
-      daysOfWeek?: string[];
-    },
+    @Body() body: ZohoEventBody,
   ) {
     return this.zohoService.createEvent(calendar, body);
   }
@@ -44,14 +55,7 @@ export class ZohoController {
   updateEvent(
     @Query('calendar') calendar: string | undefined,
     @Param('id') id: string,
-    @Body()
-    body: {
-      title: string;
-      start: string;
-      end: string;
-      description?: string;
-      status: string;
-    },
+    @Body() body: ZohoEventBody,
   ) {
     return this.zohoService.updateEvent(calendar, id, body);
   }
