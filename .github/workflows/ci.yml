@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    env:
+      # O Prisma só precisa de uma URL de formato válido para gerar o client;
+      # os testes unitários usam mocks e não acessam o banco.
+      DATABASE_URL: postgresql://user:password@localhost:5432/ci
+      JWT_SECRET: segredo-apenas-para-ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Gerar Prisma Client
+        run: npx prisma generate
+
+      - name: Compilar
+        run: npm run build
+
+      - name: Testes unitários
+        run: npm test -- --ci
+
+      # Não bloqueia o CI por enquanto; passe a bloquear quando o lint estiver limpo.
+      - name: Lint
+        run: npx eslint "{src,test}/**/*.ts"
+        continue-on-error: true

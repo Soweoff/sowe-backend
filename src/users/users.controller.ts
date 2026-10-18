@@ -4,19 +4,24 @@ import {
   Post,
   Body,
   Param,
+  ParseIntPipe,
   Put,
   Delete,
   UseGuards,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 
-@ApiBearerAuth() // 🔐 Diz ao Swagger que precisa de token
-@UseGuards(JwtAuthGuard)
+// Gerenciar usuários é uma função administrativa: todas as rotas exigem
+// login (JwtAuthGuard) e papel ADMIN (RolesGuard).
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('ADMIN')
 @Controller({ path: 'users', version: '1' })
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -27,8 +32,8 @@ export class UsersController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.usersService.findOne(Number(id));
+  findOne(@Param('id', ParseIntPipe) id: number) {
+    return this.usersService.findOne(id);
   }
 
   @Post()
@@ -37,15 +42,12 @@ export class UsersController {
   }
 
   @Put(':id')
-  update(@Param('id') id: string, @Body() body: Partial<CreateUserDto>) {
-    return this.usersService.update(Number(id), body);
+  update(@Param('id', ParseIntPipe) id: number, @Body() body: UpdateUserDto) {
+    return this.usersService.update(id, body);
   }
 
-  // 🔥 Apenas ADMIN pode deletar
-  @UseGuards(RolesGuard)
-  @Roles('ADMIN')
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.usersService.remove(Number(id));
+  remove(@Param('id', ParseIntPipe) id: number) {
+    return this.usersService.remove(id);
   }
 }

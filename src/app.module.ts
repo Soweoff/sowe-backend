@@ -8,6 +8,7 @@ import { ConfigModule } from '@nestjs/config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { MondayModule } from './monday/monday.module';
 import { ZohoModule } from './zoho/zoho.module';
+import { HealthController } from './health/health.controller';
 
 @Module({
   imports: [
@@ -20,7 +21,7 @@ import { ZohoModule } from './zoho/zoho.module';
     AuthModule,
     ZohoModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, HealthController],
   providers: [AppService],
 })
 export class AppModule implements NestModule {

@@ -6,6 +6,25 @@ import { VersioningType } from '@nestjs/common';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
+// Origens permitidas no CORS. Para liberar outro domínio sem mexer no código,
+// defina CORS_ORIGINS no Render (separado por vírgula).
+function getCorsOrigins(): string[] {
+  const fromEnv = (process.env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  if (fromEnv.length > 0) return fromEnv;
+
+  const origins = ['https://sowestudio.com.br', 'https://www.sowestudio.com.br'];
+
+  if (process.env.NODE_ENV !== 'production') {
+    origins.push('http://localhost:5173');
+  }
+
+  return origins;
+}
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
@@ -32,7 +51,7 @@ async function bootstrap() {
   SwaggerModule.setup('api', app, document);
 
   app.enableCors({
-    origin: ['http://localhost:5173', 'https://sowestudio.com.br'],
+    origin: getCorsOrigins(),
     credentials: true,
   });
 

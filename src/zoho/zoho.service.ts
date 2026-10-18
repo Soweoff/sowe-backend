@@ -1,6 +1,14 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios from 'axios';
+import axios, { type AxiosRequestConfig, type AxiosResponse } from 'axios';
+import {
+  AccessTokenCache,
+  type FetchedToken,
+  isTransientError,
+  parseExpiresInSec,
+  toZohoFormat,
+  withRetry,
+} from './zoho.utils';
 
 type CalendarKey = 'personal' | 'tnk_store';
 type ReminderAction = 'email' | 'popup' | 'notification';
@@ -24,11 +32,35 @@ interface ZohoEventPayload {
   attendeeEmail?: string;
 }
 
+const REQUEST_TIMEOUT_MS = 15_000;
+const RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 500;
+
 @Injectable()
 export class ZohoService {
+  // O access token do Zoho vale ~1h. Guardamos em memória em vez de pedir um
+  // novo a cada requisição (o Zoho limita quantos tokens cada refresh token
+  // pode gerar em poucos minutos, o que causava falhas intermitentes).
+  private readonly tokenCache = new AccessTokenCache();
+
   constructor(private configService: ConfigService) {}
 
-  async getAccessToken(): Promise<string> {
+  // Contas de outras regiões usam outros domínios (zoho.eu, zoho.in...).
+  private get accountsUrl(): string {
+    return (
+      this.configService.get<string>('ZOHO_ACCOUNTS_URL') ||
+      'https://accounts.zoho.com'
+    );
+  }
+
+  private get calendarApiUrl(): string {
+    return (
+      this.configService.get<string>('ZOHO_CALENDAR_API_URL') ||
+      'https://calendar.zoho.com/api/v1'
+    );
+  }
+
+  private async requestNewToken(): Promise<FetchedToken> {
     const clientId = this.configService.get<string>('ZOHO_CLIENT_ID');
     const clientSecret = this.configService.get<string>('ZOHO_CLIENT_SECRET');
     const refreshToken = this.configService.get<string>('ZOHO_REFRESH_TOKEN');
@@ -40,29 +72,149 @@ export class ZohoService {
       );
     }
 
-    const url =
-      `https://accounts.zoho.com/oauth/v2/token` +
-      `?refresh_token=${refreshToken}` +
-      `&client_id=${clientId}` +
-      `&client_secret=${clientSecret}` +
-      `&grant_type=refresh_token`;
+    // Credenciais no corpo da requisição (e não na URL), para não aparecerem
+    // em logs de acesso.
+    const body = new URLSearchParams({
+      refresh_token: refreshToken,
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: 'refresh_token',
+    });
 
     try {
-      const response = await axios.post(url);
+      const response = await withRetry(
+        () =>
+          axios.post(`${this.accountsUrl}/oauth/v2/token`, body, {
+            timeout: REQUEST_TIMEOUT_MS,
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          }),
+        {
+          retries: RETRIES,
+          baseDelayMs: RETRY_BASE_DELAY_MS,
+          shouldRetry: isTransientError,
+        },
+      );
 
-      if (response.data.error) {
-        throw new Error(response.data.error);
+      if (response.data?.error || !response.data?.access_token) {
+        throw new Error(response.data?.error || 'Resposta sem access_token');
       }
 
-      return response.data.access_token;
+      return {
+        token: response.data.access_token as string,
+        expiresInSec: parseExpiresInSec(response.data),
+      };
     } catch (error: any) {
       console.error('ZOHO AUTH ERROR:', error.response?.data || error.message);
 
+      // Não usamos 401 aqui de propósito: o frontend trata 401 como
+      // "sessão expirada" e deslogaria o usuário por um problema do Zoho.
       throw new HttpException(
         'Falha na autenticação com o Zoho',
-        HttpStatus.UNAUTHORIZED,
+        HttpStatus.BAD_GATEWAY,
       );
     }
+  }
+
+  async getAccessToken(): Promise<string> {
+    return this.tokenCache.get(() => this.requestNewToken());
+  }
+
+  private async send<T = any>(
+    config: AxiosRequestConfig,
+    forceNewToken: boolean,
+  ): Promise<AxiosResponse<T>> {
+    if (forceNewToken) this.tokenCache.invalidate();
+
+    const token = await this.getAccessToken();
+
+    return axios.request<T>({
+      timeout: REQUEST_TIMEOUT_MS,
+      ...config,
+      headers: {
+        ...config.headers,
+        Authorization: `Zoho-oauthtoken ${token}`,
+      },
+    });
+  }
+
+  /**
+   * Faz a chamada à API do Zoho com:
+   * - token em cache;
+   * - se o Zoho responder 401 (token revogado/expirado), gera um token novo
+   *   e repete a chamada uma vez;
+   * - novas tentativas em falhas transitórias (rede, 429, 5xx), apenas para
+   *   operações idempotentes. Criar evento NÃO é repetido, para não duplicar.
+   */
+  private async zohoRequest<T = any>(
+    config: AxiosRequestConfig,
+    idempotent: boolean,
+  ): Promise<AxiosResponse<T>> {
+    const run = async () => {
+      try {
+        return await this.send<T>(config, false);
+      } catch (error: any) {
+        if (error?.response?.status === 401) {
+          return this.send<T>(config, true);
+        }
+
+        throw error;
+      }
+    };
+
+    if (!idempotent) return run();
+
+    return withRetry(run, {
+      retries: RETRIES,
+      baseDelayMs: RETRY_BASE_DELAY_MS,
+      shouldRetry: isTransientError,
+    });
+  }
+
+  // Traduz o erro do Zoho para uma resposta clara. O motivo real fica nos
+  // logs do servidor (procure por "ZOHO ERROR").
+  private toHttpException(error: any, fallbackMessage: string): HttpException {
+    if (error instanceof HttpException) return error;
+
+    if (error instanceof RangeError) {
+      return new HttpException(error.message, HttpStatus.BAD_REQUEST);
+    }
+
+    const status: number | undefined = error?.response?.status;
+
+    console.error(
+      `ZOHO ERROR [${fallbackMessage}] status=${status ?? error?.code ?? 'n/a'}`,
+      error?.response?.data || error?.message,
+    );
+
+    if (status === 429) {
+      return new HttpException(
+        'O Zoho limitou as requisições. Tente novamente em instantes.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    if (status === 404) {
+      return new HttpException(
+        'Evento ou calendário não encontrado no Zoho',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    if (status === 400) {
+      return new HttpException(
+        'O Zoho rejeitou os dados do evento',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (error?.code === 'ECONNABORTED' || error?.code === 'ETIMEDOUT') {
+      return new HttpException(
+        'O Zoho demorou demais para responder. Tente novamente.',
+        HttpStatus.GATEWAY_TIMEOUT,
+      );
+    }
+
+    return new HttpException(fallbackMessage, HttpStatus.BAD_GATEWAY);
   }
 
   private getCalendarId(calendar: CalendarKey = 'tnk_store'): string {
@@ -111,18 +263,6 @@ export class ZohoService {
     }
 
     return zDate;
-  }
-
-  private toZohoFormat(dateString: string): string {
-    const date = new Date(dateString);
-
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    const h = String(date.getHours()).padStart(2, '0');
-    const min = String(date.getMinutes()).padStart(2, '0');
-
-    return `${y}${m}${d}T${h}${min}00-0300`;
   }
 
   private getEventDuration(
@@ -230,20 +370,87 @@ export class ZohoService {
     }
   }
 
+  // Monta o objeto de evento no formato do Zoho (usado ao criar e ao editar).
+  private buildEventObj(eventData: ZohoEventPayload) {
+    const status = eventData.status || 'Agendado';
+    const hiddenStatusTag = `[STATUS:${status}] \n\n`;
+
+    const start = toZohoFormat(eventData.start);
+    const end = toZohoFormat(eventData.end);
+
+    // Mesmo formato e mesmo fuso, então a comparação de texto é segura.
+    if (end < start) {
+      throw new HttpException(
+        'O término não pode ser antes do início.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const eventObj: any = {
+      title: eventData.title,
+      description: hiddenStatusTag + (eventData.description || ''),
+      dateandtime: {
+        timezone: 'America/Sao_Paulo',
+        start,
+        end,
+      },
+    };
+
+    this.applyNotificationsToEventObj(eventObj, eventData);
+
+    if (
+      eventData.isRecurring &&
+      eventData.repeatUntil &&
+      eventData.daysOfWeek &&
+      eventData.daysOfWeek.length > 0
+    ) {
+      const untilDate = eventData.repeatUntil.replace(/-/g, '');
+      const days = eventData.daysOfWeek.join(',');
+
+      eventObj.rrule = `FREQ=WEEKLY;BYDAY=${days};UNTIL=${untilDate}T235959Z`;
+    }
+
+    return eventObj;
+  }
+
+  private eventsUrl(calendarId: string) {
+    return `${this.calendarApiUrl}/calendars/${calendarId}/events`;
+  }
+
+  private eventUrl(calendarId: string, eventId: string) {
+    return `${this.eventsUrl(calendarId)}/${encodeURIComponent(eventId)}`;
+  }
+
+  // O Zoho exige o ETag atual do evento para editar ou excluir.
+  private async getEtag(eventUrl: string): Promise<string> {
+    const eventInfo = await this.zohoRequest(
+      { method: 'GET', url: eventUrl },
+      true,
+    );
+
+    const etag = eventInfo.data?.events?.[0]?.etag;
+
+    if (!etag) {
+      throw new HttpException(
+        'Evento não encontrado no Zoho',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    return String(etag);
+  }
+
   async getEvents(calendar?: string) {
     const calendarKey = this.normalizeCalendar(calendar);
-    const token = await this.getAccessToken();
     const calendarId = this.getCalendarId(calendarKey);
 
     try {
-      const eventsRes = await axios.get(
-        `https://calendar.zoho.com/api/v1/calendars/${calendarId}/events`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
+      const eventsRes = await this.zohoRequest(
+        { method: 'GET', url: this.eventsUrl(calendarId) },
+        true,
       );
 
-      const events = eventsRes.data.events;
+      const events = eventsRes.data?.events;
 
       if (!events || events.length === 0) return [];
 
@@ -286,63 +493,29 @@ export class ZohoService {
         };
       });
     } catch (error: any) {
-      console.error(
-        'ZOHO EVENTS ERROR:',
-        error.response?.data || error.message,
-      );
-
-      throw new HttpException(
-        'Erro ao buscar eventos do Zoho',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw this.toHttpException(error, 'Erro ao buscar eventos do Zoho');
     }
   }
 
   async createEvent(calendar: string | undefined, eventData: ZohoEventPayload) {
     const calendarKey = this.normalizeCalendar(calendar);
-    const token = await this.getAccessToken();
     const calendarId = this.getCalendarId(calendarKey);
 
     try {
-      const status = eventData.status || 'Agendado';
-      const hiddenStatusTag = `[STATUS:${status}] \n\n`;
-
-      const eventObj: any = {
-        title: eventData.title,
-        description: hiddenStatusTag + (eventData.description || ''),
-        dateandtime: {
-          timezone: 'America/Sao_Paulo',
-          start: this.toZohoFormat(eventData.start),
-          end: this.toZohoFormat(eventData.end),
-        },
-      };
-
-      this.applyNotificationsToEventObj(eventObj, eventData);
-
-      if (
-        eventData.isRecurring &&
-        eventData.repeatUntil &&
-        eventData.daysOfWeek &&
-        eventData.daysOfWeek.length > 0
-      ) {
-        const untilDate = eventData.repeatUntil.replace(/-/g, '');
-        const days = eventData.daysOfWeek.join(',');
-
-        eventObj.rrule = `FREQ=WEEKLY;BYDAY=${days};UNTIL=${untilDate}T235959Z`;
-      }
+      const eventObj = this.buildEventObj(eventData);
 
       const params = new URLSearchParams();
       params.append('eventdata', JSON.stringify(eventObj));
 
-      const response = await axios.post(
-        `https://calendar.zoho.com/api/v1/calendars/${calendarId}/events`,
-        params,
+      // idempotent = false: não repetimos a criação para não duplicar eventos.
+      const response = await this.zohoRequest(
         {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
+          method: 'POST',
+          url: this.eventsUrl(calendarId),
+          data: params,
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         },
+        false,
       );
 
       return {
@@ -351,15 +524,7 @@ export class ZohoService {
         data: response.data,
       };
     } catch (error: any) {
-      console.error(
-        'ZOHO CREATE ERROR:',
-        error.response?.data || error.message,
-      );
-
-      throw new HttpException(
-        'Erro ao criar evento no Zoho',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw this.toHttpException(error, 'Erro ao criar evento no Zoho');
     }
   }
 
@@ -369,116 +534,57 @@ export class ZohoService {
     eventData: ZohoEventPayload,
   ) {
     const calendarKey = this.normalizeCalendar(calendar);
-    const token = await this.getAccessToken();
     const calendarId = this.getCalendarId(calendarKey);
 
     try {
-      const eventUrl = `https://calendar.zoho.com/api/v1/calendars/${calendarId}/events/${eventId}`;
-
-      const eventInfo = await axios.get(eventUrl, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const etag = eventInfo.data.events?.[0]?.etag;
-
-      if (!etag) {
-        throw new Error('ETag do evento não encontrado');
-      }
-
-      const status = eventData.status || 'Agendado';
-      const hiddenStatusTag = `[STATUS:${status}] \n\n`;
-
-      const eventObj: any = {
-        title: eventData.title,
-        description: hiddenStatusTag + (eventData.description || ''),
-        dateandtime: {
-          timezone: 'America/Sao_Paulo',
-          start: this.toZohoFormat(eventData.start),
-          end: this.toZohoFormat(eventData.end),
-        },
-      };
-
-      this.applyNotificationsToEventObj(eventObj, eventData);
-
-      if (
-        eventData.isRecurring &&
-        eventData.repeatUntil &&
-        eventData.daysOfWeek &&
-        eventData.daysOfWeek.length > 0
-      ) {
-        const untilDate = eventData.repeatUntil.replace(/-/g, '');
-        const days = eventData.daysOfWeek.join(',');
-
-        eventObj.rrule = `FREQ=WEEKLY;BYDAY=${days};UNTIL=${untilDate}T235959Z`;
-      }
+      const eventUrl = this.eventUrl(calendarId, eventId);
+      const eventObj = this.buildEventObj(eventData);
+      const etag = await this.getEtag(eventUrl);
 
       const params = new URLSearchParams();
       params.append('eventdata', JSON.stringify(eventObj));
 
-      await axios.put(eventUrl, params, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-          ETag: String(etag),
+      await this.zohoRequest(
+        {
+          method: 'PUT',
+          url: eventUrl,
+          data: params,
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            ETag: etag,
+          },
         },
-      });
+        true,
+      );
 
       return {
         message: 'Evento atualizado com sucesso',
         calendar: calendarKey,
       };
     } catch (error: any) {
-      console.error(
-        'ZOHO UPDATE ERROR:',
-        error.response?.data || error.message,
-      );
-
-      throw new HttpException(
-        'Erro ao atualizar evento',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw this.toHttpException(error, 'Erro ao atualizar evento');
     }
   }
 
   async deleteEvent(calendar: string | undefined, eventId: string) {
     const calendarKey = this.normalizeCalendar(calendar);
-    const token = await this.getAccessToken();
     const calendarId = this.getCalendarId(calendarKey);
 
     try {
-      const eventUrl = `https://calendar.zoho.com/api/v1/calendars/${calendarId}/events/${eventId}`;
+      const eventUrl = this.eventUrl(calendarId, eventId);
+      const etag = await this.getEtag(eventUrl);
 
-      const eventInfo = await axios.get(eventUrl, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const etag = eventInfo.data.events?.[0]?.etag;
-
-      if (!etag) {
-        throw new Error('ETag do evento não encontrado');
-      }
-
-      await axios.delete(eventUrl, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          ETag: String(etag),
-        },
-      });
+      await this.zohoRequest(
+        { method: 'DELETE', url: eventUrl, headers: { ETag: etag } },
+        true,
+      );
 
       return {
         message: 'Evento deletado com sucesso',
         calendar: calendarKey,
       };
     } catch (error: any) {
-      console.error(
-        'ZOHO DELETE ERROR:',
-        error.response?.data || error.message,
-      );
-
-      throw new HttpException(
-        'Erro ao deletar evento',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw this.toHttpException(error, 'Erro ao deletar evento');
     }
   }
 }
