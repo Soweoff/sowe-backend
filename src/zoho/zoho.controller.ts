@@ -9,32 +9,18 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth } from '@nestjs/swagger';
 import { ZohoService } from './zoho.service';
+import { ZohoEventDto } from './dto/zoho-event.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
-type ReminderAction = 'email' | 'popup' | 'notification';
-
-export interface ZohoEventBody {
-  title: string;
-  start: string;
-  end: string;
-  description?: string;
-  status?: string;
-
-  isRecurring?: boolean;
-  repeatUntil?: string;
-  daysOfWeek?: string[];
-
-  reminderEnabled?: boolean;
-  reminderAction?: ReminderAction;
-  reminderMinutes?: number;
-
-  notifyPersonal?: boolean;
-  attendeeEmail?: string;
-}
-
+// Qualquer usuário logado pode VER o planejamento (tela /dashboard).
+// Criar, editar e excluir eventos é só para ADMIN.
+@ApiBearerAuth()
 @Controller('zoho')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class ZohoController {
   constructor(private readonly zohoService: ZohoService) {}
 
@@ -44,23 +30,26 @@ export class ZohoController {
   }
 
   @Post('events')
+  @Roles('ADMIN')
   createEvent(
     @Query('calendar') calendar: string | undefined,
-    @Body() body: ZohoEventBody,
+    @Body() body: ZohoEventDto,
   ) {
     return this.zohoService.createEvent(calendar, body);
   }
 
   @Put('events/:id')
+  @Roles('ADMIN')
   updateEvent(
     @Query('calendar') calendar: string | undefined,
     @Param('id') id: string,
-    @Body() body: ZohoEventBody,
+    @Body() body: ZohoEventDto,
   ) {
     return this.zohoService.updateEvent(calendar, id, body);
   }
 
   @Delete('events/:id')
+  @Roles('ADMIN')
   deleteEvent(
     @Query('calendar') calendar: string | undefined,
     @Param('id') id: string,

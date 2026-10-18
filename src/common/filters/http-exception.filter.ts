@@ -24,6 +24,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
         ? exception.getResponse()
         : 'Internal server error';
 
+    // Erros inesperados (5xx) ficam registrados com a causa real nos logs do
+    // servidor; para quem chama a API continua aparecendo só a mensagem curta.
+    if (status >= 500) {
+      console.error(
+        `[${request.method}] ${request.url} -> ${status}`,
+        exception instanceof Error ? exception.stack : exception,
+      );
+    }
+
     response.status(status).json({
       statusCode: status,
       timestamp: new Date().toISOString(),

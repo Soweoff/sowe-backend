@@ -1,6 +1,8 @@
+import 'reflect-metadata';
 import { Test, TestingModule } from '@nestjs/testing';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
+import { ROLES_KEY } from '../auth/decorators/roles.decorator';
 
 describe('UsersController', () => {
   let controller: UsersController;
@@ -24,5 +26,9 @@ describe('UsersController', () => {
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  it('is restricted to ADMIN', () => {
+    expect(Reflect.getMetadata(ROLES_KEY, UsersController)).toEqual(['ADMIN']);
   });
 });

@@ -20,7 +20,9 @@ import { RolesGuard } from './guards/roles.guard';
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_SECRET') as string,
         signOptions: {
-          expiresIn: configService.get<string>('JWT_EXPIRES_IN') as any,
+          // Sem JWT_EXPIRES_IN o token nunca expiraria; usamos 1 dia como padrão.
+          expiresIn: (configService.get<string>('JWT_EXPIRES_IN') ||
+            '1d') as any,
         },
       }),
     }),
