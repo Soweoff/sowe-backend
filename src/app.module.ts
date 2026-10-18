@@ -8,6 +8,7 @@ import { ConfigModule } from '@nestjs/config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { MondayModule } from './monday/monday.module';
 import { ZohoModule } from './zoho/zoho.module';
+import { MetricsModule } from './metrics/metrics.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -20,6 +21,7 @@ import { HealthController } from './health/health.controller';
     PrismaModule,
     AuthModule,
     ZohoModule,
+    MetricsModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],
