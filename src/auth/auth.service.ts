@@ -1,5 +1,7 @@
 import {
   ConflictException,
+  HttpException,
+  HttpStatus,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -13,9 +15,13 @@ import {
   isPrismaError,
   PRISMA_UNIQUE_VIOLATION,
 } from '../common/prisma-errors';
+import { LoginThrottle } from '../common/security/login-throttle';
 
 @Injectable()
 export class AuthService {
+  // Estado em memória (zera quando a API reinicia). Ver rate-limit.store.ts.
+  private readonly loginThrottle = new LoginThrottle();
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
@@ -56,19 +62,38 @@ export class AuthService {
     }
   }
 
-  async login(data: LoginDto) {
+  async login(data: LoginDto, ip = 'unknown') {
+    const email = data.email.trim();
+
+    // Depois de várias senhas erradas, nem chegamos a verificar a senha.
+    const throttle = this.loginThrottle.check(email, ip);
+
+    if (throttle.blocked) {
+      const minutes = Math.max(1, Math.ceil(throttle.retryAfterSec / 60));
+
+      throw new HttpException(
+        `Muitas tentativas de login. Tente novamente em ${minutes} min.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
     // Busca sem diferenciar maiúsculas/minúsculas para não quebrar contas
     // antigas que foram gravadas com letras maiúsculas no e-mail.
     const user = await this.prisma.user.findFirst({
-      where: { email: { equals: data.email.trim(), mode: 'insensitive' } },
+      where: { email: { equals: email, mode: 'insensitive' } },
     });
 
-    if (!user) throw new UnauthorizedException('Invalid credentials');
+    const isPasswordValid = user
+      ? await bcrypt.compare(data.password, user.password)
+      : false;
 
-    const isPasswordValid = await bcrypt.compare(data.password, user.password);
-
-    if (!isPasswordValid)
+    if (!user || !isPasswordValid) {
+      // E-mail inexistente também conta, para não revelar quais contas existem.
+      this.loginThrottle.recordFailure(email, ip);
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    this.loginThrottle.recordSuccess(email, ip);
 
     return this.issueToken(user);
   }

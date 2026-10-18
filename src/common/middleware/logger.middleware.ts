@@ -7,7 +7,12 @@ export class LoggerMiddleware implements NestMiddleware {
     const { method, originalUrl } = req;
     const now = new Date().toISOString();
 
-    console.log(`[${now}] ${method} ${originalUrl}`);
+    // `ip` é o IP que a API enxerga e `xff` o que o proxy enviou. Servem para
+    // conferir se o TRUST_PROXY_HOPS está certo (o `ip` deve ser o do cliente).
+    const xff = req.headers['x-forwarded-for'];
+    const forwarded = xff ? ` xff=${String(xff)}` : '';
+
+    console.log(`[${now}] ${method} ${originalUrl} ip=${req.ip}${forwarded}`);
 
     next();
   }

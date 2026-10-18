@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  HttpException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
@@ -87,6 +91,89 @@ describe('AuthService', () => {
       await expect(
         service.login({ email: 'everton@email.com', password: 'errada' }),
       ).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  describe('login throttle', () => {
+    const user = {
+      id: 1,
+      email: 'a@a.com',
+      password: 'hashed-password',
+      role: 'USER',
+    };
+
+    const wrongLogin = (ip: string) =>
+      service.login({ email: 'a@a.com', password: 'errada' }, ip);
+
+    it('blocks with 429 after 5 wrong passwords and stops querying the database', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(user);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      for (let i = 0; i < 5; i++) {
+        await expect(wrongLogin('1.1.1.1')).rejects.toThrow(
+          UnauthorizedException,
+        );
+      }
+
+      mockPrisma.user.findFirst.mockClear();
+
+      const error = await wrongLogin('1.1.1.1').catch((e) => e);
+
+      expect(error).toBeInstanceOf(HttpException);
+      expect((error as HttpException).getStatus()).toBe(429);
+      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('does not lock the account owner out from another IP', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(user);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      for (let i = 0; i < 5; i++) {
+        await expect(wrongLogin('6.6.6.6')).rejects.toThrow();
+      }
+
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      const result = await service.login(
+        { email: 'a@a.com', password: 'certa' },
+        '2.2.2.2',
+      );
+
+      expect(result).toEqual({ access_token: 'fake-jwt-token' });
+    });
+
+    it('counts unknown e-mails too, so accounts cannot be enumerated', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+
+      for (let i = 0; i < 5; i++) {
+        await expect(wrongLogin('1.1.1.1')).rejects.toThrow(
+          UnauthorizedException,
+        );
+      }
+
+      const error = await wrongLogin('1.1.1.1').catch((e) => e);
+
+      expect((error as HttpException).getStatus()).toBe(429);
+    });
+
+    it('a successful login clears the failure counter', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(user);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      for (let i = 0; i < 4; i++) {
+        await expect(wrongLogin('1.1.1.1')).rejects.toThrow();
+      }
+
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      await service.login({ email: 'a@a.com', password: 'certa' }, '1.1.1.1');
+
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      for (let i = 0; i < 4; i++) {
+        await expect(wrongLogin('1.1.1.1')).rejects.toThrow(
+          UnauthorizedException,
+        );
+      }
     });
   });
 
