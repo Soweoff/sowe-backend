@@ -37,6 +37,7 @@ Documentação completa e testável em **`/api`** (Swagger). Resumo:
 | `POST` `PUT` `DELETE` | `/v1/users` · `/v1/users/:id` | `ADMIN` |
 | `GET` | `/zoho/events?calendar=personal\|tnk_store` | Usuário logado |
 | `POST` `PUT` `DELETE` | `/zoho/events` · `/zoho/events/:id` | `ADMIN` |
+| `GET` | `/metrics/youtube` | `ADMIN` (inscritos, views e vídeos dos canais; cache de 10 min) |
 | `GET` | `/monday/tasks` | `ADMIN` |
 | `GET` | `/health` | Público (monitoramento) |
 
@@ -91,6 +92,8 @@ A senha precisa ter pelo menos 10 caracteres e nunca deve ser escrita no código
 | `ZOHO_CALENDAR_ID` · `ZOHO_TNK_STORE_CALENDAR_ID` | Para o calendário | IDs dos calendários `personal` e `tnk_store` |
 | `ZOHO_PERSONAL_NOTIFICATION_EMAIL` | Não | E-mail que recebe os avisos dos eventos |
 | `ZOHO_ACCOUNTS_URL` · `ZOHO_CALENDAR_API_URL` | Não | Só se a conta Zoho não for da região `.com` |
+| `YOUTUBE_API_KEY` | Para as métricas | Chave da YouTube Data API v3 |
+| `YOUTUBE_CHANNEL_IDS` | Não | IDs dos canais (vírgula); padrão: os 3 do estúdio |
 | `MONDAY_TOKEN` | Para o Monday | Token da API do Monday |
 
 ## Scripts
@@ -122,6 +125,7 @@ src/
   users/       CRUD de usuários (somente ADMIN)
   zoho/        integração com o Zoho Calendar (token em cache, novas tentativas)
   monday/      integração com o Monday
+  metrics/     métricas dos canais do YouTube
   health/      rota de monitoramento
   common/      filtros, interceptors, middlewares e utilidades de segurança
 prisma/        schema e PrismaService
