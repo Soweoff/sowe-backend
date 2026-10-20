@@ -14,6 +14,7 @@ import {
 import { fetchPeriod } from './youtube-analytics';
 
 const CACHE_MS = 10 * 60 * 1000; // a cota das APIs é limitada: cache de 10 min
+const CACHE_FAIL_MS = 60 * 1000; // se algum período falhou, tenta de novo em 1 min
 const TIMEOUT_MS = 10_000;
 
 export type ChannelWithPeriod = ChannelMetrics & { period: PeriodMetrics | null };
@@ -27,7 +28,7 @@ export interface Payload {
 @Injectable()
 export class MetricsService {
   private readonly logger = new Logger(MetricsService.name);
-  private cache = new Map<number, { at: number; data: Payload }>();
+  private cache = new Map<number, { at: number; ttl: number; data: Payload }>();
 
   async getYoutube(days: number): Promise<Payload> {
     const key = process.env.YOUTUBE_API_KEY;
@@ -38,7 +39,7 @@ export class MetricsService {
     }
 
     const hit = this.cache.get(days);
-    if (hit && Date.now() - hit.at < CACHE_MS) return hit.data;
+    if (hit && Date.now() - hit.at < hit.ttl) return hit.data;
 
     try {
       const channels = await this.fetchChannels(key);
@@ -57,7 +58,12 @@ export class MetricsService {
         days,
         channels: withPeriod,
       };
-      this.cache.set(days, { at: Date.now(), data });
+      const failed = withPeriod.some((c) => tokens[c.id] && !c.period);
+      this.cache.set(days, {
+        at: Date.now(),
+        ttl: failed ? CACHE_FAIL_MS : CACHE_MS,
+        data,
+      });
       return data;
     } catch {
       // Se já temos dados antigos, é melhor mostrá-los do que falhar.

@@ -149,14 +149,25 @@ export function summarizeRows(
 }
 
 // "UCabc=token1,UCdef=token2" → { UCabc: 'token1', UCdef: 'token2' }
+// Tolera erros comuns de colagem: aspas, espaços, quebras de linha e o
+// prefixo "YOUTUBE_TOKENS=" colado junto com o valor.
 export function parseTokens(raw: string | undefined): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const part of (raw ?? '').split(',')) {
+  const cleaned = (raw ?? '').replace(/^\s*YOUTUBE_TOKENS\s*=\s*/, '');
+  for (const part of cleaned.split(',')) {
     const i = part.indexOf('=');
     if (i <= 0) continue;
-    const id = part.slice(0, i).trim();
-    const token = part.slice(i + 1).trim();
+    const strip = (v: string) => v.replace(/["'\s]/g, '');
+    const id = strip(part.slice(0, i));
+    const token = strip(part.slice(i + 1));
     if (id && token) out[id] = token;
   }
   return out;
+}
+
+// Impressão digital para os logs: permite comparar o valor guardado no
+// servidor com o que você testou, sem revelar o segredo.
+export function fingerprint(value: string | undefined): string {
+  if (!value) return 'vazio';
+  return `len=${value.length} inicio=${value.slice(0, 4)} fim=${value.slice(-4)}`;
 }
