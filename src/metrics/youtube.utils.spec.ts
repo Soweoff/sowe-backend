@@ -1,4 +1,13 @@
-import { mapChannel, parseChannelIds, DEFAULT_CHANNEL_IDS } from './youtube.utils';
+import {
+  ALLOWED_PERIODS,
+  DEFAULT_CHANNEL_IDS,
+  buildRange,
+  mapChannel,
+  parseChannelIds,
+  parsePeriod,
+  parseTokens,
+  summarizeRows,
+} from './youtube.utils';
 
 describe('youtube.utils', () => {
   it('converte o item da API', () => {
@@ -23,5 +32,37 @@ describe('youtube.utils', () => {
   it('aceita lista separada por vírgula sem repetir', () => {
     const a = 'UCxwte-dvs1WgDN1okSweY3g';
     expect(parseChannelIds(`${a}, ${a}`)).toEqual([a]);
+  });
+});
+
+describe('períodos', () => {
+  it('parsePeriod', () => {
+    expect(parsePeriod(undefined)).toBe(30);
+    expect(parsePeriod('90')).toBe(90);
+    expect(parsePeriod('7')).toBeNull();
+    expect(ALLOWED_PERIODS).toEqual([30, 90, 365]);
+  });
+
+  it('buildRange termina ontem e cobre o dobro dos dias', () => {
+    const r = buildRange(30, new Date('2026-10-20T15:00:00Z'));
+    expect(r).toEqual({ startDate: '2026-08-21', currentStart: '2026-09-20', endDate: '2026-10-19' });
+  });
+
+  it('summarizeRows separa atual e anterior e preenche dias vazios', () => {
+    const range = { currentStart: '2026-10-18', endDate: '2026-10-19' };
+    const m = summarizeRows(
+      [['2026-10-16', 5, 10, 1, 0], ['2026-10-19', 7, 20, 2, 1]],
+      2,
+      range,
+    );
+    expect(m.previous.views).toBe(5);
+    expect(m.current).toEqual({ views: 7, minutesWatched: 20, subscribersGained: 2, subscribersLost: 1 });
+    expect(m.daily).toEqual([{ date: '2026-10-18', views: 0 }, { date: '2026-10-19', views: 7 }]);
+  });
+
+  it('parseTokens', () => {
+    expect(parseTokens('UCa=1//x, UCb=y')).toEqual({ UCa: '1//x', UCb: 'y' });
+    expect(parseTokens(undefined)).toEqual({});
+    expect(parseTokens('semigual')).toEqual({});
   });
 });

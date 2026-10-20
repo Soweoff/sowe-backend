@@ -37,7 +37,7 @@ Documentação completa e testável em **`/api`** (Swagger). Resumo:
 | `POST` `PUT` `DELETE` | `/v1/users` · `/v1/users/:id` | `ADMIN` |
 | `GET` | `/zoho/events?calendar=personal\|tnk_store` | Usuário logado |
 | `POST` `PUT` `DELETE` | `/zoho/events` · `/zoho/events/:id` | `ADMIN` |
-| `GET` | `/metrics/youtube` | `ADMIN` (inscritos, views e vídeos dos canais; cache de 10 min) |
+| `GET` | `/metrics/youtube?days=30\|90\|365` | `ADMIN` (totais dos canais + métricas do período; cache de 10 min) |
 | `GET` | `/monday/tasks` | `ADMIN` |
 | `GET` | `/health` | Público (monitoramento) |
 
@@ -93,6 +93,7 @@ A senha precisa ter pelo menos 10 caracteres e nunca deve ser escrita no código
 | `ZOHO_PERSONAL_NOTIFICATION_EMAIL` | Não | E-mail que recebe os avisos dos eventos |
 | `ZOHO_ACCOUNTS_URL` · `ZOHO_CALENDAR_API_URL` | Não | Só se a conta Zoho não for da região `.com` |
 | `YOUTUBE_API_KEY` | Para as métricas | Chave da YouTube Data API v3 |
+| `GOOGLE_CLIENT_ID` · `GOOGLE_CLIENT_SECRET` · `YOUTUBE_TOKENS` | Para os períodos | OAuth do YouTube Analytics (um refresh token por canal: `UCid=token,...`) |
 | `YOUTUBE_CHANNEL_IDS` | Não | IDs dos canais (vírgula); padrão: os 3 do estúdio |
 | `MONDAY_TOKEN` | Para o Monday | Token da API do Monday |
 
