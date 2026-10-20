@@ -26,7 +26,11 @@ async function getAccessToken(refreshToken: string): Promise<string> {
     }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
-  if (!res.ok) throw new Error(`oauth ${res.status}`);
+  if (!res.ok) {
+    // Só o código do erro (ex.: invalid_grant), nunca o token.
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(`oauth ${res.status} ${body.error ?? ''}`.trim());
+  }
   const body = (await res.json()) as { access_token: string; expires_in: number };
   tokenCache.set(refreshToken, {
     token: body.access_token,
