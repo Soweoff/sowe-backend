@@ -16,8 +16,8 @@ import { fetchPeriod } from './youtube-analytics';
 const CACHE_MS = 10 * 60 * 1000; // a cota das APIs é limitada: cache de 10 min
 const TIMEOUT_MS = 10_000;
 
-type ChannelWithPeriod = ChannelMetrics & { period: PeriodMetrics | null };
-interface Payload {
+export type ChannelWithPeriod = ChannelMetrics & { period: PeriodMetrics | null };
+export interface Payload {
   updatedAt: string;
   days: number;
   channels: ChannelWithPeriod[];
