@@ -5,6 +5,7 @@ import {
   mapChannel,
   parseChannelIds,
   parsePeriod,
+  fingerprint,
   parseTokens,
   summarizeRows,
 } from './youtube.utils';
@@ -64,5 +65,19 @@ describe('períodos', () => {
     expect(parseTokens('UCa=1//x, UCb=y')).toEqual({ UCa: '1//x', UCb: 'y' });
     expect(parseTokens(undefined)).toEqual({});
     expect(parseTokens('semigual')).toEqual({});
+  });
+});
+
+describe('tolerância de colagem', () => {
+  it('remove aspas, espaços e o prefixo YOUTUBE_TOKENS=', () => {
+    expect(parseTokens('YOUTUBE_TOKENS="UCa=1//x y"\n, \'UCb\'= z ')).toEqual({
+      UCa: '1//xy',
+      UCb: 'z',
+    });
+  });
+
+  it('fingerprint não revela o valor inteiro', () => {
+    expect(fingerprint('1//0abcdefghijWXYZ')).toBe('len=18 inicio=1//0 fim=WXYZ');
+    expect(fingerprint(undefined)).toBe('vazio');
   });
 });

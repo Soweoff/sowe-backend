@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { PeriodMetrics, summarizeRows } from './youtube.utils';
+import { PeriodMetrics, fingerprint, summarizeRows } from './youtube.utils';
 
 const TIMEOUT_MS = 10_000;
 const logger = new Logger('YoutubeAnalytics');
@@ -69,7 +69,12 @@ export async function fetchPeriod(
     const body = (await res.json()) as { rows?: (string | number)[][] };
     return summarizeRows(body.rows ?? [], days, range);
   } catch (err) {
-    logger.warn(`Período indisponível para ${channelId}: ${(err as Error).message}`);
+    logger.warn(
+      `Período indisponível para ${channelId}: ${(err as Error).message} ` +
+        `[token ${fingerprint(refreshToken)}] ` +
+        `[client_id ${fingerprint(process.env.GOOGLE_CLIENT_ID)}] ` +
+        `[secret len=${(process.env.GOOGLE_CLIENT_SECRET ?? '').length}]`,
+    );
     return null;
   }
 }
