@@ -11,6 +11,7 @@ import { ZohoModule } from './zoho/zoho.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { BookingModule } from './booking/booking.module';
 import { TasksModule } from './tasks/tasks.module';
+import { WealthModule } from './wealth/wealth.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -26,6 +27,7 @@ import { HealthController } from './health/health.controller';
     MetricsModule,
     BookingModule,
     TasksModule,
+    WealthModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],
