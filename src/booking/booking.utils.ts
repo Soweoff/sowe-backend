@@ -249,11 +249,12 @@ export interface PendingBooking {
   description: string;
 }
 
-export function isPendingEvent(e: {
-  title?: string;
-  status?: string;
-}): boolean {
-  return e.status === PENDING_STATUS && !!e.title?.startsWith(PENDING_PREFIX);
+// Reconhece pelo título ("⏳ PENDENTE · Nome"), que a lista do Zoho sempre
+// devolve. Ignora emoji/símbolos no começo, caso o Zoho os altere.
+const PENDING_TITLE = /^[^\p{L}\p{N}]*PENDENTE\s*·\s*/u;
+
+export function isPendingEvent(e: { title?: string; status?: string }): boolean {
+  return PENDING_TITLE.test(e.title ?? '');
 }
 
 export function toPendingBooking(e: {
@@ -266,7 +267,7 @@ export function toPendingBooking(e: {
   const description = e.description ?? '';
   return {
     id: e.id,
-    name: e.title.slice(PENDING_PREFIX.length),
+    name: e.title.replace(PENDING_TITLE, '').trim(),
     contact: /^Contato: (.*)$/m.exec(description)?.[1]?.trim() ?? '',
     subject: /^Assunto: (.*)$/m.exec(description)?.[1]?.trim() ?? '',
     start: e.start,
