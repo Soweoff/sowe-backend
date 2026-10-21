@@ -1,4 +1,5 @@
 import {
+  encodeEventId,
   AccessTokenCache,
   isTransientError,
   parseExpiresInSec,
@@ -140,5 +141,17 @@ describe('withRetry / isTransientError', () => {
     expect(isTransientError({ response: { status: 401 } })).toBe(false);
     expect(isTransientError({ code: 'ECONNABORTED' })).toBe(true);
     expect(isTransientError(new Error('x'))).toBe(false);
+  });
+});
+
+describe('encodeEventId', () => {
+  it('mantém o @ literal (o Zoho recusa %40)', () => {
+    expect(encodeEventId('ce88daf5661c4a73b149b11d2cd25eb8@zoho.com')).toBe(
+      'ce88daf5661c4a73b149b11d2cd25eb8@zoho.com',
+    );
+  });
+
+  it('continua codificando caracteres perigosos', () => {
+    expect(encodeEventId('a/b?c#d')).toBe('a%2Fb%3Fc%23d');
   });
 });

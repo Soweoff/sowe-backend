@@ -154,3 +154,9 @@ export async function withRetry<T>(
     }
   }
 }
+
+// O código do evento termina em "@zoho.com" e o Zoho exige esse "@" literal no
+// endereço: com "%40" ele responde 404 ("Page not found").
+export function encodeEventId(eventId: string): string {
+  return encodeURIComponent(eventId).replace(/%40/g, '@');
+}
