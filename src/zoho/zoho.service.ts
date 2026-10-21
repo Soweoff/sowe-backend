@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import axios, { type AxiosRequestConfig, type AxiosResponse } from 'axios';
 import {
   AccessTokenCache,
+  encodeEventId,
   type FetchedToken,
   isTransientError,
   parseExpiresInSec,
@@ -418,7 +419,7 @@ export class ZohoService {
   }
 
   private eventUrl(calendarId: string, eventId: string) {
-    return `${this.eventsUrl(calendarId)}/${encodeURIComponent(eventId)}`;
+    return `${this.eventsUrl(calendarId)}/${encodeEventId(eventId)}`;
   }
 
   // O Zoho exige o ETag atual do evento para editar ou excluir.
