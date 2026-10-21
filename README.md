@@ -38,6 +38,9 @@ Documentação completa e testável em **`/api`** (Swagger). Resumo:
 | `GET` | `/zoho/events?calendar=personal\|tnk_store` | Usuário logado |
 | `POST` `PUT` `DELETE` | `/zoho/events` · `/zoho/events/:id` | `ADMIN` |
 | `GET` | `/metrics/youtube?days=30\|90\|365` | `ADMIN` (totais dos canais + métricas do período; cache de 10 min) |
+| `GET` | `/booking/slots` | Público (horários livres: seg–sex, 9h–18h, 1 h, de 24 h a 30 dias à frente) |
+| `POST` | `/booking` | Público (pedido de reunião: entra no Zoho como "⏳ PENDENTE") |
+| `GET` `POST` `DELETE` | `/booking/admin/pending` · `/booking/admin/:id/approve` · `/booking/admin/:id` | `ADMIN` (aprovar ou recusar pedidos) |
 | `GET` | `/monday/tasks` | `ADMIN` |
 | `GET` | `/health` | Público (monitoramento) |
 
@@ -127,6 +130,7 @@ src/
   zoho/        integração com o Zoho Calendar (token em cache, novas tentativas)
   monday/      integração com o Monday
   metrics/     métricas dos canais do YouTube
+  booking/     agendamento público com aprovação (usa o Zoho, sem tabelas novas)
   health/      rota de monitoramento
   common/      filtros, interceptors, middlewares e utilidades de segurança
 prisma/        schema e PrismaService

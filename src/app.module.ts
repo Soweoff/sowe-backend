@@ -9,6 +9,7 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { MondayModule } from './monday/monday.module';
 import { ZohoModule } from './zoho/zoho.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { BookingModule } from './booking/booking.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -22,6 +23,7 @@ import { HealthController } from './health/health.controller';
     AuthModule,
     ZohoModule,
     MetricsModule,
+    BookingModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],
