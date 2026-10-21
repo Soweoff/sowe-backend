@@ -440,6 +440,29 @@ export class ZohoService {
     return String(etag);
   }
 
+  // Um evento só, incluindo a descrição (a lista do Zoho não a devolve).
+  async getEventDescription(
+    calendar: string | undefined,
+    eventId: string,
+  ): Promise<string> {
+    const calendarId = this.getCalendarId(this.normalizeCalendar(calendar));
+
+    try {
+      const res = await this.zohoRequest(
+        {
+          method: 'GET',
+          url: this.eventUrl(calendarId, eventId),
+          headers: { Accept: 'application/json+large' },
+        },
+        true,
+      );
+      const raw: string = res.data?.events?.[0]?.description ?? '';
+      return raw.replace(/\[STATUS:.*?\]/, '').trim();
+    } catch (error: any) {
+      throw this.toHttpException(error, 'Erro ao buscar o evento no Zoho');
+    }
+  }
+
   async getEvents(calendar?: string) {
     const calendarKey = this.normalizeCalendar(calendar);
     const calendarId = this.getCalendarId(calendarKey);

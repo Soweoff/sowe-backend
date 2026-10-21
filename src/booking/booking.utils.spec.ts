@@ -97,6 +97,8 @@ describe('booking.utils', () => {
     expect(parsed.contact).toBe('(42) 99999-0000');
     expect(isPendingEvent({ title: ev.title, status: 'Pendente' })).toBe(true);
     expect(isPendingEvent({ title: 'Reunião', status: 'Pendente' })).toBe(false);
+    expect(isPendingEvent({ title: ev.title })).toBe(true); // sem status
+    expect(isPendingEvent({ title: 'PENDENTE · Ana' })).toBe(true); // sem emoji
   });
 
   it('limpa texto do usuário', () => {

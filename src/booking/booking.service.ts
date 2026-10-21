@@ -99,13 +99,26 @@ export class BookingService {
     const events = await this.loadEvents(true);
     const found = events.find((e) => e.id === id && isPendingEvent(e));
     if (!found) throw new NotFoundException('Pedido não encontrado.');
-    return toPendingBooking(found);
+    return toPendingBooking(await this.withDescription(found));
+  }
+
+  // A lista do Zoho não traz a descrição: buscamos só dos pedidos pendentes.
+  private async withDescription(e: any) {
+    if (/^Contato:/m.test(e.description ?? '')) return e;
+    try {
+      const description = await this.zoho.getEventDescription(CALENDAR, e.id);
+      return { ...e, description };
+    } catch {
+      return e;
+    }
   }
 
   async listPending() {
     const events = await this.loadEvents(true);
-    return events
-      .filter(isPendingEvent)
+    const pending = await Promise.all(
+      events.filter(isPendingEvent).map((e) => this.withDescription(e)),
+    );
+    return pending
       .map(toPendingBooking)
       .sort((a, b) => a.start.localeCompare(b.start));
   }
