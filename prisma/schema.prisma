@@ -30,3 +30,19 @@ model User {
   password String
   role     String @default("USER")
 }
+
+// Missões do dia (lista de tarefas gamificada).
+model Task {
+  id         Int       @id @default(autoincrement())
+  userId     Int
+  title      String
+  difficulty String    @default("MEDIUM") // EASY | MEDIUM | HARD | EPIC
+  xp         Int       @default(20)
+  day        String // "AAAA-MM-DD" (dia planejado, horário de Brasília)
+  done       Boolean   @default(false)
+  doneAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, done])
+  @@index([userId, doneAt])
+}

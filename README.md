@@ -41,6 +41,7 @@ Documentação completa e testável em **`/api`** (Swagger). Resumo:
 | `GET` | `/booking/slots` | Público (horários livres: seg–sex, 9h–18h, 1 h, de 24 h a 30 dias à frente) |
 | `POST` | `/booking` | Público (pedido de reunião: entra no Zoho como "⏳ PENDENTE") |
 | `GET` `POST` `DELETE` | `/booking/admin/pending` · `/booking/admin/:id/approve` · `/booking/admin/:id` | `ADMIN` (aprovar ou recusar pedidos) |
+| `GET` `POST` `PATCH` `DELETE` | `/tasks` · `/tasks/report?days=7` · `/tasks/:id/complete` · `/tasks/:id/reopen` | `ADMIN` (missões do dia com XP, nível e relatório; cada usuário vê só as suas) |
 | `GET` | `/monday/tasks` | `ADMIN` |
 | `GET` | `/health` | Público (monitoramento) |
 
@@ -131,6 +132,7 @@ src/
   monday/      integração com o Monday
   metrics/     métricas dos canais do YouTube
   booking/     agendamento público com aprovação (usa o Zoho, sem tabelas novas)
+  tasks/       missões do dia (tabela `Task`): XP, nível, sequência e relatório
   health/      rota de monitoramento
   common/      filtros, interceptors, middlewares e utilidades de segurança
 prisma/        schema e PrismaService

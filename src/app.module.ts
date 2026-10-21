@@ -10,6 +10,7 @@ import { MondayModule } from './monday/monday.module';
 import { ZohoModule } from './zoho/zoho.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { BookingModule } from './booking/booking.module';
+import { TasksModule } from './tasks/tasks.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -24,6 +25,7 @@ import { HealthController } from './health/health.controller';
     ZohoModule,
     MetricsModule,
     BookingModule,
+    TasksModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],
