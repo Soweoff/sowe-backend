@@ -46,3 +46,16 @@ model Task {
   @@index([userId, done])
   @@index([userId, doneAt])
 }
+
+// Meta de patrimônio: quanto há em cada lugar (imóveis, ações, cripto...).
+model Holding {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  category  String // IMOVEL | DINHEIRO | ACOES | BANCO | SKINS | CRIPTO | OUTROS
+  label     String
+  amount    Float
+  currency  String   @default("BRL") // BRL | USD
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([userId])
+}
