@@ -1,18 +1,9 @@
-import { BadRequestException } from '@nestjs/common';
 import { PublicMetricsController } from './public-metrics.controller';
-import { MetricsService, Payload } from './metrics.service';
+import { MetricsService, PublicChannels } from './metrics.service';
 
-const totals = {
-  views: 10,
-  minutesWatched: 120,
-  subscribersGained: 3,
-  subscribersLost: 1,
-};
-
-function makePayload(): Payload {
+function makePayload(): PublicChannels {
   return {
     updatedAt: '2026-10-25T00:00:00.000Z',
-    days: 30,
     channels: [
       {
         id: 'UCabc',
@@ -24,34 +15,29 @@ function makePayload(): Payload {
         videos: 12,
         // Campos que NUNCA devem sair pela rota pública.
         secretField: 'não pode vazar',
-        period: {
-          current: { ...totals, estimatedRevenue: 999 },
-          previous: { ...totals },
-          daily: [{ date: '2026-10-24', views: 10, extra: 'x' }],
-        },
-      } as unknown as Payload['channels'][number],
+        period: { current: { minutesWatched: 120 } },
+      } as unknown as PublicChannels['channels'][number],
     ],
   };
 }
 
 describe('PublicMetricsController', () => {
-  function build(payload: Payload) {
+  function build(payload: PublicChannels) {
     const service = {
-      getYoutube: jest.fn().mockResolvedValue(payload),
+      getPublicChannels: jest.fn().mockResolvedValue(payload),
     } as unknown as MetricsService;
     return { controller: new PublicMetricsController(service), service };
   }
 
-  it('devolve só os campos permitidos', async () => {
+  it('devolve só os campos públicos do canal', async () => {
     const { controller } = build(makePayload());
-    const res = await controller.getYoutube('30');
+    const res = await controller.getYoutube();
     const channel = res.channels[0] as unknown as Record<string, unknown>;
 
     expect(Object.keys(channel).sort()).toEqual(
       [
         'handle',
         'id',
-        'period',
         'subscribers',
         'thumbnail',
         'title',
@@ -60,36 +46,21 @@ describe('PublicMetricsController', () => {
       ].sort(),
     );
     expect(channel).not.toHaveProperty('secretField');
-
-    const period = channel.period as {
-      current: Record<string, unknown>;
-      daily: Record<string, unknown>[];
-    };
-    expect(Object.keys(period.current).sort()).toEqual(
-      ['minutesWatched', 'subscribersGained', 'subscribersLost', 'views'].sort(),
-    );
-    expect(Object.keys(period.daily[0]).sort()).toEqual(['date', 'views']);
+    expect(channel).not.toHaveProperty('period');
   });
 
-  it('mantém period nulo quando o canal não autorizou o Analytics', async () => {
+  it('mantém inscritos nulos quando o canal os esconde', async () => {
     const payload = makePayload();
-    (payload.channels[0] as { period: unknown }).period = null;
+    payload.channels[0].subscribers = null;
     const { controller } = build(payload);
     const res = await controller.getYoutube();
-    expect(res.channels[0].period).toBeNull();
+    expect(res.channels[0].subscribers).toBeNull();
   });
 
-  it('usa 30 dias quando days não é informado', async () => {
-    const { controller, service } = build(makePayload());
-    await controller.getYoutube(undefined);
-    expect(service.getYoutube).toHaveBeenCalledWith(30);
-  });
-
-  it('rejeita períodos fora de 30, 90 e 365', async () => {
-    const { controller, service } = build(makePayload());
-    await expect(controller.getYoutube('7')).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
-    expect(service.getYoutube).not.toHaveBeenCalled();
+  it('repassa o aviso de dados em cache', async () => {
+    const payload = { ...makePayload(), stale: true };
+    const { controller } = build(payload);
+    const res = await controller.getYoutube();
+    expect(res.stale).toBe(true);
   });
 });
